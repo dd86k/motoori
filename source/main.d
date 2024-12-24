@@ -331,7 +331,7 @@ int main(string[] args)
         {
             //res.writeBody(buffer_theme_js, 200, "text/javascript");
             debug res.writeBody(cast(ubyte[])readAll( "pub/theme.js" ), 200, "text/css");
-            else  res.writeBody(buffer_main_css, 200, "text/javascript");
+            else  res.writeBody(buffer_theme_js, 200, "text/javascript");
         })
     ;
     
