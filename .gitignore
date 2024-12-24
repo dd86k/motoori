@@ -1,0 +1,39 @@
+# DUB
+.dub
+docs.json
+__dummy.html
+docs/
+
+# Execs
+/extract
+/motoori
+motoori-test-*
+/motoori*
+motoori*-test-*
+dub.selections.json
+*.exe
+*.dll
+
+# Libs and miscs
+*.pdb
+*.dll
+*.so
+*.dylib
+*.o
+*.obj
+*.lst
+*.lib
+*.a
+
+# Archives
+*.zip
+*.xz
+*.gzip
+*.lzip
+
+# Default folders
+data/
+
+# Personal
+perso/
+legacydata/

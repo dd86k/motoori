@@ -1,0 +1,24 @@
+extends template
+
+block body
+  h1.title Online Error Database
+  div.row(style="text-align:center;margin:2em;")
+    div.col.card
+      h3 !{dbstats.windowsHeaderCount}
+      div
+        a(href="/windows/headers") Windows headers
+    div.col.card
+      h3 !{dbstats.windowsModuleCount}
+      div
+        a(href="/windows/modules") Windows modules
+    div.col.card
+      h3 !{dbstats.totalMessageCount}
+      div Total error messages
+    div.col.card
+      h3 !{dbstats.windowsSymbolicCount}
+      div Symbolic names
+  h2.center All at one convenient place
+  p.center.tight
+    | Documenting error codes and messages found on various platforms,
+    | such as Microsoft&reg; Windows&reg;
+    | and C runtimes at the same, convenient place.

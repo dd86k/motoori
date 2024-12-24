@@ -1,0 +1,28 @@
+extends template
+
+block body
+  - debug {
+    h2 !{error.code} - !{error.message}
+    pre !{error.exception}
+  - } else {
+    h1.center !{error.code}
+    - string m = void;
+    - switch (error.code) {
+    - case 400:
+    -   m = "Misunderstood request"; break;
+    - case 401,403:
+    -   m = "Forbidden access"; break;
+    - case 404:
+    -   m = "Page not found"; break;
+    - default:
+    -   m = error.message;
+    - }
+    h2.center= m
+    p.center
+      | We even have Web error codes!
+    p.center
+      | Something broken? You can <a href="/about#contact">contact me</a>.
+    p.center
+      a(href="/")
+        | Take me home
+  - }

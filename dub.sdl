@@ -1,0 +1,32 @@
+name "motoori"
+description "Online error database project"
+authors "dd86k"
+copyright "None"
+license "CC0-1.0"
+
+# Extractor code, renamed folder to "extractcode" as it was
+# conflicting with some weird linux folder behavior
+subPackage {
+	name "extract"
+	targetName "extract"
+	description "Error message extractor"
+	sourcePaths "extractcode"
+	importPaths "extractcode"
+}
+
+# Server code
+#dependency "vibe-d" version="~>0.10.1"
+# TODO: when data module gone, switch to this
+dependency "vibe-http" version="~>1.2.0"
+
+buildType "debugv" {
+	buildOptions "debugMode"
+	dflags "-vgc" "-vtls" platform="dmd"
+	dflags "--vgc" platform="ldc"
+}
+
+# vibe.d linking TLS fix
+#TODO: make it work with ldc2 too
+subConfigurations "vibe-d:tls" "notls"
+versions "HaveNoTLS" # effective against vibe-http
+versions "VibeNoSSL" "VibeOutputCompactHTML" "VibeDisableCommandLineParsing" "VibeNoDefaultArgs"

@@ -1,0 +1,39 @@
+extends template
+
+block body
+  p
+    | <a href="/windows/">Windows</a> /
+    | <a href="/windows/headers">Headers</a> /
+    | <a href="/windows/header/!{winheader.name}">!{winheader.name}</a> /
+    | !{winsymbol.name}
+  h1 !{winsymbol.name}
+  p Code: !{winsymbol.origId} (!{winsymbol.decId})
+  p HRESULT Facility: !{hresult_facility.name} (!{hresult_facility.id})
+  p NTSTATUS Facility: !{ntstatus_facility.name} (!{ntstatus_facility.id})
+  - if (winsymbol.message.length) {
+  h2 Abstract
+  p= winsymbol.message
+  - }
+  - if (modules.length) {
+  h2 Associated Modules
+  table
+    thead
+      tr
+        th Module
+        th Code
+        th Description
+    tbody
+      - size_t count;
+      - foreach (mod; modules) {
+      - ++count;
+      tr
+        td
+          a(href="/windows/module/!{mod.module_.name}") !{mod.module_.name}
+        td
+          a(href="/windows/code/!{mod.error.origId}") !{mod.error.origId}
+        td !{mod.error.message}
+      - }
+    tfoot
+      tr
+        td(colspan=3) !{count} !{plural(count,"entry","entries")}
+  - }

@@ -1,0 +1,6 @@
+# The error data should be made available on dd86k.space/pub/
+# Get that instead
+
+User-agent: *
+Disallow: /about
+Crawl-delay: 50

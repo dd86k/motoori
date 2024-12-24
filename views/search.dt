@@ -1,0 +1,40 @@
+extends template
+
+block body
+  h3 Results for "#{query}":
+  - if (results.length) {
+  p !{results.length} results
+  div.results
+  - import std.format : sformat;
+  - foreach (result; results) {
+  article.result
+    - char[200] urlcodebuf = void;
+    - string url_code = void;
+    - string url_title = void;
+    - string title_type = void;
+    - final switch (result.type) {
+    - case "windows-module":
+    -   title_type = "Windows modules";
+    -   url_title = cast(string)result.origId;
+    -   url_code = cast(string)sformat(urlcodebuf[], "/windows/code/%s", result.origId);
+    -   break;
+    - case "windows-symbol":
+    -   title_type = "Windows headers";
+    -   url_title = cast(string)result.origId;
+    -   url_code = cast(string)sformat(urlcodebuf[], "/windows/error/%s", result.origId);
+    -   break;
+    - case "crt":
+    -   title_type = "C runtime";
+    -   url_title = cast(string)result.name;
+    -   url_code = cast(string)sformat(urlcodebuf[], "/crt/%s#%s", result.name, result.origId);
+    -   break;
+    - }
+    div.searchtitle <a href="!{url_code}">!{result.origId}</a>
+    div !{title_type} - !{result.name}
+    - if (result.needle) {
+    p !{result.pre}<u>!{result.needle}</u>!{result.post}
+    - }
+  - }
+  - } else {
+  h3 No results found.
+  - }

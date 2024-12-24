@@ -1,0 +1,28 @@
+extends template
+
+block body
+  p <a href="/windows/">Windows</a> / <a href="/windows/headers">Headers</a> / !{winheader.key}
+  h1 !{winheader.name}
+  p !{winheader.description}
+  h2 Associated Error Codes
+  p Below is a list of error codes found for this header.
+  - size_t count;
+  table
+    thead
+      tr
+        th Symbolic
+        th Value
+        th Description
+    tbody
+      - foreach (sym; winheader.symbolics) {
+      - ++count;
+      tr
+        td
+          a(href="/windows/error/!{sym.key}") !{sym.name}
+        td
+          a(href="/windows/code/!{sym.origId}") !{sym.origId}
+        td !{sym.message}
+      - }
+    tfoot
+      tr
+        td(colspan=3) !{count} !{plural(count,"entry","entries")}

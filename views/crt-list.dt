@@ -1,0 +1,17 @@
+extends template
+
+block body
+  h1 C Runtimes
+  p Pages:
+  //- TODO: Could just list from CRT list as /crt/:name + Full name ~ " Codes"
+  ul
+    li
+      a(href="/crt/msvc") Microsoft Visual C Runtime Codes
+    li
+      a(href="/crt/glibc") GNU C Library Codes
+    li
+      a(href="/crt/musl") Musl C Runtime Codes
+  p
+    | Runtimes are frameworks that provide an environment for user
+    | code to use various utility functions. The C programming language
+    | environment comes with what's know as the C Runtime ("CRT" for short).
