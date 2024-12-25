@@ -15,8 +15,8 @@ I made this because:
 
 This repo contains both the website platform and extractors.
 
-- `extract`: Source for the extractor and archive packer
-- `data`: Created by extractor, this is where data is written prior to archiving
+- `extractcode`: Source for the extractor and archive packer
+- `data`: Used for loading data
 - `pub`: Public files for HTTP server
 - `source`: Source for HTTP server
 - `views`: Pug template views for HTTP server
@@ -24,11 +24,10 @@ This repo contains both the website platform and extractors.
 # Building the Database
 
 Requirements:
-- A recent D compiler. GDC might have issues compiling Vibe-d.
+- A recent D compiler. GDC might have issues compiling vibe-d.
 - A recent version of DUB.
-- Windows for the `windows` extractor.
-- Windows for the [Microsoft Error Lookup tool](https://docs.microsoft.com/en-us/windows/win32/debug/system-error-code-lookup-tool), used for symbolic names.
-- Windows for the `crt` extractor.
+- Windows install for headers and module entries.
+- [Microsoft Error Lookup tool](https://docs.microsoft.com/en-us/windows/win32/debug/system-error-code-lookup-tool).
 - A Linux distro with the GNU environment for the `crt` extractor.
   - Ubuntu is a well supported choice.
 - A Linux distro with the Musl environment for the `crt` extractor.
@@ -40,14 +39,13 @@ Suggestions:
 Steps:
 1. Upgrade dependencies (as precaution): `dub upgrade`
 2. Build the extractor for the platform: `dub build :extract`
-3. Generate information for each platform: `extract --generate-all`
-3. Windows: Run the MS error tool: `Err_6.4.5.exe /:outputtoCSV data\windows\symbolics.csv`
-2. On Windows, run `dub run :windows`
-3. On Windows, run `dub run :windows -- --headerdesc`
-4. On Windows, run `dub run :crt`
-5. On Windows, run `Err_6.4.5.exe /:outputtoCSV data\windows\symbolics.csv`
-6. On a Glibc platform, run `dub run :crt`
-7. On a Musl platform, run `dub run :crt`
+3. Generate information for current C runtime: `extract --generate-crt`
+4. Windows: Run the MS error tool: `Err_6.4.5.exe /:outputtoCSV headers.csv`
+5. To build the symbolic entries, run `extract --generate-windows-headers=headers.csv`
+6. To build the modules entries, run `extract --generate-windows-modules`
+
+Should have most things. Do note that different versions of Windows will have
+different module versions.
 
 Issues:
 - `Invalid variable: DC`
@@ -55,5 +53,5 @@ Issues:
 
 # Building the Site
 
-
-
+Usually just `dub` to build and run a debug build.
+`dub build -b release --compiler=ldc2` for releases.
