@@ -15,9 +15,7 @@ subPackage {
 }
 
 # Server code
-#dependency "vibe-d" version="~>0.10.1"
-# TODO: when data module gone, switch to this
-dependency "vibe-http" version="~>1.2.0"
+dependency "vibe-http" version="~>1.3.1"
 
 buildType "debugv" {
 	buildOptions "debugMode"
@@ -26,7 +24,6 @@ buildType "debugv" {
 }
 
 # vibe.d linking TLS fix
-#TODO: make it work with ldc2 too
 subConfigurations "vibe-d:tls" "notls"
 versions "HaveNoTLS" # effective against vibe-http
 versions "VibeNoSSL" "VibeOutputCompactHTML" "VibeDisableCommandLineParsing" "VibeNoDefaultArgs"
