@@ -10,8 +10,8 @@ subPackage {
 	name "extract"
 	targetName "extract"
 	description "Error message extractor"
-	sourcePaths "extractcode"
-	importPaths "extractcode"
+	sourcePaths "extractor"
+	importPaths "extractor"
 }
 
 # Server code
