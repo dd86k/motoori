@@ -15,7 +15,7 @@ subPackage {
 }
 
 # Server code
-dependency "vibe-http" version="~>1.3.1"
+dependency "ddhttpd" path="../ddhttpd" version="*"
 
 buildType "debugv" {
 	buildOptions "debugMode"
@@ -24,6 +24,6 @@ buildType "debugv" {
 }
 
 # vibe.d linking TLS fix
-subConfigurations "vibe-d:tls" "notls"
+#subConfigurations "vibe-d:tls" "notls"
 versions "HaveNoTLS" # effective against vibe-http
 versions "VibeNoSSL" "VibeOutputCompactHTML" "VibeDisableCommandLineParsing" "VibeNoDefaultArgs"

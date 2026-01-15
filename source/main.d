@@ -8,12 +8,7 @@ import std.string : toLower;
 import motoori, database;
 import extra.windows;
 
-import vibe.http.common;
-import vibe.http.server;
-import vibe.http.router;
-import vibe.http.fileserver;
-import vibe.core.log;
-import vibe.core.core;
+import ddhttpd;
 
 static import std.file;
 alias readAll = std.file.read;
@@ -65,12 +60,12 @@ int main(string[] args)
     ushort port = 8999;
     bool all;
     GetoptResult optres = void;
-    LogLevel loglevel = LogLevel.info;
+    //LogLevel loglevel = LogLevel.info;
     try
     {
         optres = getopt(args, config.caseSensitive,
         "from-folder",  "Load data from folder (default='data')", &odatafolder,
-        "loglevel",     "Set log level", &loglevel,
+        //"loglevel",     "Set log level", &loglevel,
         "all",          "Listen to all addresses", &all,
         "port",         "Listen to port (default=8999)", &port,
         "version",      "Show the version screen and exit.", &clipage,
@@ -96,10 +91,11 @@ int main(string[] args)
         return 0;
     }
     
-    setLogLevel(loglevel);
+    //setLogLevel(loglevel);
     
     databaseLoadFromFolder(odatafolder);
     
+    /*
     scope HTTPFileServerSettings fileopts = new HTTPFileServerSettings();
     fileopts.options = HTTPFileServerOption.none;
     
@@ -337,4 +333,20 @@ int main(string[] args)
     
     listenHTTP(settings, router);
     return runApplication;
+    */
+    
+    
+    HTTPServer http = new HTTPServer()
+        .addRoute("GET", "/", (ref HTTPRequest req)
+        {
+            req.reply(200, "test");
+        })
+    ;
+    
+    http.start(port);
+    
+    writeln("Listening on port ", port);
+    readln;
+    
+    return 0;
 }

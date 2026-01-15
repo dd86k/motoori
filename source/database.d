@@ -53,6 +53,9 @@ void databaseLoadFromFolder(string base)
     // 
     with (statistics) totalMessageCount =
         crtMessageCount + windowsModuleErrorCount;
+    
+    GC.collect();
+    GC.minimize();
 }
 
 //
@@ -302,9 +305,6 @@ private void databaseLoadCrt(string path)
     // Add it to the list
     data_crt ~= crt;
     statistics.crtMessageCount += crt.messages.length;
-    
-    GC.collect();
-    GC.minimize();
 }
 
 // List everything
