@@ -25,7 +25,7 @@ struct ErrorModule
     const(char)[] symbolic;
 }
 
-void prepareHeader(OutBuffer buffer, string title, ActiveTab tab)
+void prepareHeader(OutBuffer buffer, string title, ActiveTab tab, string search_query = null)
 {
     // NOTE: Could have done a Pug/Diet template converter (by line) but lazy
     buffer.put(`<!DOCTYPE html>`);
@@ -73,7 +73,9 @@ void prepareHeader(OutBuffer buffer, string title, ActiveTab tab)
     buffer.put(`</ul>`); // theme menu
     buffer.put(`<li>`);
     buffer.put(`<form action="/search">`); // search
-    buffer.put(`<input name="q" placeholder="Search" />`);
+    buffer.put(`<input name="q" placeholder="Search"`);
+    if (search_query) buffer.writef(` value="%s"`, search_query);
+    buffer.put(` />`);
     buffer.put(`<input type="submit" value=" " class="button icon-only i i-search" style="margin:0;" />`);
     buffer.put(`</form>`); // search
     buffer.put(`</li>`);
@@ -129,6 +131,8 @@ void pageCrt(OutBuffer buffer, ref DatabaseCrt crt)
     
     buffer.put(`</tbody></table>`);
 }
+//void pageModule(OutBuffer buffer, )
+//void pageHeader(OutBuffer buffer, )
 
 /// Used to modify page settings
 struct PageSettings
@@ -166,12 +170,10 @@ int main(string[] args)
     ushort port = 8999;
     bool all;
     GetoptResult optres = void;
-    //LogLevel loglevel = LogLevel.info;
     try
     {
         optres = getopt(args, config.caseSensitive,
         "from-folder",  "Load data from folder (default='data')", &odatafolder,
-        //"loglevel",     "Set log level", &loglevel,
         "all",          "Listen to all addresses", &all,
         "port",         "Listen to port (default=8999)", &port,
         "version",      "Show the version screen and exit.", &clipage,
@@ -197,45 +199,12 @@ int main(string[] args)
         return 0;
     }
     
-    //setLogLevel(loglevel);
-    
     write("Loading database..."); stdout.flush();
     databaseLoadFromFolder(odatafolder);
     writeln(" OK");
     
     /*
-    scope HTTPFileServerSettings fileopts = new HTTPFileServerSettings();
-    fileopts.options = HTTPFileServerOption.none;
-    
-    scope HTTPServerSettings settings = new HTTPServerSettings;
-    settings.port = port;
-    settings.errorPageHandler =
-        (HTTPServerRequest req, HTTPServerResponse res, HTTPServerErrorInfo error) {
-        char[512] buf = void;
-        string t = cast(string)sformat(buf[], "%d - %s | OEDB", error.code, error.message);
-        PageSettings page = PageSettings(ActiveTab.none, t);
-        res.render!("error.dt", page, req, error);
-    };
-    if (all == false) // default is [ "0.0.0.0", "::" ]
-        settings.bindAddresses = [ "127.0.0.1" ];
-    
-    // Reading it once into memory to reduce I/O and load times
-    ubyte[] buffer_chota_min_css = cast(ubyte[])readAll( "pub/chota.min.css" );
-    ubyte[] buffer_favicon_png   = cast(ubyte[])readAll( "pub/favicon.png" );
-    ubyte[] buffer_humans_txt    = cast(ubyte[])readAll( "pub/humans.txt" );
-    debug {} else ubyte[] buffer_main_css      = cast(ubyte[])readAll( "pub/main.css" );
-    ubyte[] buffer_noscript_css  = cast(ubyte[])readAll( "pub/noscript.css" );
-    ubyte[] buffer_robots_txt    = cast(ubyte[])readAll( "pub/robots.txt" );
-    ubyte[] buffer_theme_js      = cast(ubyte[])readAll( "pub/theme.js" );
-    
     scope URLRouter router = new URLRouter()
-        // Windows list of headers
-        .get("/windows/headers", (HTTPServerRequest req, HTTPServerResponse res)
-        {
-            WindowsHeader[] winheaders = databaseWindowsHeaders();
-            PageSettings page = PageSettings(ActiveTab.windows, "Headers | OEDB");
-            res.render!("windows-headers.dt", page, winheaders);
-        })
         // Windows header details
         .get("/windows/header/:header", (HTTPServerRequest req, HTTPServerResponse res)
         {
@@ -245,13 +214,6 @@ int main(string[] args)
             
             PageSettings page = PageSettings(ActiveTab.windows, winheader.name~" | OEDB");
             res.render!("windows-header.dt", page, winheader);
-        })
-        // Windows list of modules
-        .get("/windows/modules", (HTTPServerRequest req, HTTPServerResponse res)
-        {
-            static immutable PageSettings page = PageSettings(ActiveTab.windows, "Modules | OEDB");
-            WindowsModule[] modulelist = databaseWindowsModules();
-            res.render!("windows-modules.dt", page, modulelist);
         })
         // Windows module details
         .get("/windows/module/:module", (HTTPServerRequest req, HTTPServerResponse res)
@@ -340,94 +302,7 @@ int main(string[] args)
                 results_modules,   results_headers,
                 formal);
         })
-        // Windows error types and formats
-        .get("/windows/error-types", (HTTPServerRequest req, HTTPServerResponse res)
-        {
-            static immutable PageSettings page = PageSettings(ActiveTab.windows, "Windows Error Types | OEDB");
-            immutable(WindowsFacility)[] hresult_facility_list = getWindowsHResultFacilities();
-            immutable(WindowsFacility)[] ntstatus_facility_list = getWindowsNtstatusFacilities();
-            res.render!("windows-error-types.dt", page, hresult_facility_list, ntstatus_facility_list);
-        })
-        // Windows main page
-        .get("/windows/", (HTTPServerRequest req, HTTPServerResponse res)
-        {
-            static immutable PageSettings page = PageSettings(ActiveTab.windows, "Windows | OEDB");
-            res.render!("windows.dt", page);
-        })
-        // CRT details
-        .get("/crt/:key", (HTTPServerRequest req, HTTPServerResponse res)
-        {
-            string name = req.params["key"];
-            
-            DatabaseCrt crt = databaseCrt(name);
-            if (crt.name == string.init) // Hack to avoid filtering exceptions
-                throw new HTTPStatusException(404);
-            
-            PageSettings page = PageSettings(ActiveTab.crt, crt.full~" | OEDB");
-            res.render!("crt.dt", page, crt);
-        })
-        // CRT main page
-        .get("/crt/", (HTTPServerRequest req, HTTPServerResponse res)
-        {
-            static immutable PageSettings page = PageSettings(ActiveTab.crt, "C Runtimes | OEDB");
-            res.render!("crt-list.dt", page);
-        })
-        // Search
-        .get("/search", (HTTPServerRequest req, HTTPServerResponse res)
-        {
-            enforceHTTP("q" in req.query, HTTPStatus.badRequest);
-            
-            string query = req.query["q"];
-            
-            SearchResult[] results = search(query);
-            
-            static immutable PageSettings page = PageSettings(ActiveTab.none, "Search | OEDB");
-            res.render!("search.dt", page, query, results);
-        })
-        //.get("/*", serveStaticFiles("pub/", fileopts))
-        // HACK: This is to work around the weird sendFile behavior.
-        //       sendFile is used by serveStaticFile and serveStaticFiles, but as soon as it is
-        //       used, the amount of virtual memory increases by 800-1300 MiB which is a little worrying.
-        //
-        //       Worrying as in, there are chances these get committed, and if they get committed, it
-        //       will bust the amount of memory I gave to the container. Tests with readAllMem alias
-        //       only bumps up the allocation up to 30-60 MiB of virtual memory once used, which is
-        //       more reassuring for now. With a release build using ldc2, it's only 20 MiB up.
-        .get("/chota.min.css", (HTTPServerRequest req, HTTPServerResponse res)
-        {
-            res.writeBody(buffer_chota_min_css, 200, "text/css");
-        })
-        .get("/favicon.png", (HTTPServerRequest req, HTTPServerResponse res)
-        {
-            res.writeBody(buffer_favicon_png, 200, "image/png");
-        })
-        .get("/humans.txt", (HTTPServerRequest req, HTTPServerResponse res)
-        {
-            res.writeBody(buffer_humans_txt, 200, "text/plain");
-        })
-        .get("/main.css", (HTTPServerRequest req, HTTPServerResponse res)
-        {
-            debug res.writeBody(cast(ubyte[])readAll( "pub/main.css" ), 200, "text/css");
-            else  res.writeBody(buffer_main_css, 200, "text/css");
-        })
-        .get("/noscript.css", (HTTPServerRequest req, HTTPServerResponse res)
-        {
-            res.writeBody(buffer_noscript_css, 200, "text/css");
-        })
-        .get("/robots.txt", (HTTPServerRequest req, HTTPServerResponse res)
-        {
-            res.writeBody(buffer_robots_txt, 200, "text/plain");
-        })
-        .get("/theme.js", (HTTPServerRequest req, HTTPServerResponse res)
-        {
-            //res.writeBody(buffer_theme_js, 200, "text/javascript");
-            debug res.writeBody(cast(ubyte[])readAll( "pub/theme.js" ), 200, "text/css");
-            else  res.writeBody(buffer_theme_js, 200, "text/javascript");
-        })
     ;
-    
-    listenHTTP(settings, router);
-    return runApplication;
     */
     
     // Reading it once into memory to reduce I/O and load times
@@ -441,18 +316,41 @@ int main(string[] args)
     ubyte[] buffer_theme_js      = cast(ubyte[])readAll( "pub/theme.js" );
     writeln(" OK");
     
-    // Transfer sizes
-    // / -> 2.38 K
-    // /about -> 2.90 K
-    // /crt/ -> 2.17 K
-    // /crt/msvc -> 6.36 K
-    // /windows/modules -> 13.43 K
-    // /windows/headers -> 22.57 K
-    
     // vibe-http has:
     // - much longer compile times and memory usage
     // - issues compiling with specific compilers
     HTTPServer http = new HTTPServer()
+        .onError((ref HTTPRequest req, Exception ex)
+        {
+            scope OutBuffer buffer = new OutBuffer;
+            buffer.reserve(4 * 1024);
+            
+            prepareHeader(buffer, "OEDB", ActiveTab.none);
+            
+            if (HttpServerException httpex = cast(HttpServerException)ex)
+            {
+                buffer.writef(`<h1>%s - %s</h1>`, httpex.code, httpex.msg);
+            }
+            else
+            {
+                buffer.put(`<h1>500 - Internal Error</h1>`);
+            }
+            
+            buffer.put(`<p class="center">Something broken? You can <a href="/about#contact">contact me</a>.</p>`);
+            buffer.put(`<p class="center"><a href="/">Take me home</a></p>`);
+            
+            debug // Exception data
+            {
+                buffer.put(`<pre>`);
+                buffer.put(ex.toString());
+                buffer.put(`</pre>`);
+            }
+            
+            prepareFooter(buffer);
+            
+            req.reply(200, buffer.toBytes(), "text/html");
+            return REQUEST_OK;
+        })
         .addRoute("GET", "/", (ref HTTPRequest req)
         {
             scope OutBuffer buffer = new OutBuffer;
@@ -493,6 +391,7 @@ int main(string[] args)
             prepareFooter(buffer);
             
             req.reply(200, buffer.toBytes(), "text/html");
+            return REQUEST_OK;
         })
         .addRoute("GET", "/about", (ref HTTPRequest req)
         {
@@ -534,6 +433,7 @@ int main(string[] args)
             prepareFooter(buffer);
             
             req.reply(200, buffer.toBytes(), "text/html");
+            return REQUEST_OK;
         })
         //
         // C runtime paths
@@ -563,6 +463,7 @@ int main(string[] args)
             prepareFooter(buffer);
             
             req.reply(200, buffer.toBytes(), "text/html");
+            return REQUEST_OK;
         })
         .addRoute("GET", "/crt/msvc", (ref HTTPRequest req)
         {
@@ -578,6 +479,7 @@ int main(string[] args)
             prepareFooter(buffer);
             
             req.reply(200, buffer.toBytes(), "text/html");
+            return REQUEST_OK;
         })
         .addRoute("GET", "/crt/gnu", (ref HTTPRequest req)
         {
@@ -593,6 +495,7 @@ int main(string[] args)
             prepareFooter(buffer);
             
             req.reply(200, buffer.toBytes(), "text/html");
+            return REQUEST_OK;
         })
         .addRoute("GET", "/crt/musl", (ref HTTPRequest req)
         {
@@ -608,6 +511,7 @@ int main(string[] args)
             prepareFooter(buffer);
             
             req.reply(200, buffer.toBytes(), "text/html");
+            return REQUEST_OK;
         })
         //
         // Windows paths
@@ -652,6 +556,7 @@ int main(string[] args)
             prepareFooter(buffer);
             
             req.reply(200, buffer.toBytes(), "text/html");
+            return REQUEST_OK;
         })
         .addRoute("GET", "/windows/error-types", (ref HTTPRequest req)
         {
@@ -880,33 +785,216 @@ int main(string[] args)
             prepareFooter(buffer);
             
             req.reply(200, buffer.toBytes(), "text/html");
+            return REQUEST_OK;
+        })
+        .addRoute("GET", "/windows/modules", (ref HTTPRequest req)
+        {
+            scope OutBuffer buffer = new OutBuffer;
+            buffer.reserve(32 * 1024);
+            
+            prepareHeader(buffer, "Windows Modules | OEDB", ActiveTab.windows);
+            
+            buffer.put(`<p><a href="/windows/">Windows</a> / Modules</p>`);
+            buffer.put(`<h1>Windows Modules</h1>`);
+            buffer.put(
+                `<p>`~
+                `Also known as a dynamic library, or in the context of Windows, a DLL, `~
+                `a module, that can be dynamically loaded onto memory, that may contain `~
+                `code and resources. Resources include images, pieces of texts (strings), `~
+                `certificates, and more.`~
+                `</p>`
+            );
+            buffer.put(`<p>Some modules listed below may include executable images (.exe files).</p>`);
+            
+            WindowsModule[] modulelist = databaseWindowsModules();
+            buffer.put(`<table class="table">`);
+            buffer.put(`<thead><tr><th>Name</th><th>Description</th></tr></thead>`);
+            buffer.put(`<tbody>`);
+            size_t count;
+            foreach (mod; modulelist)
+            {
+                ++count;
+                buffer.put(`<tr>`);
+                buffer.writef(`<td><a href="/windows/module/%s">%s</a></td>`, mod.name, mod.name);
+                buffer.writef(`<td>%s</td>`, mod.description);
+                buffer.put(`</tr>`);
+            }
+            buffer.put(`</tbody>`);
+            buffer.writef(`<tfoot><tr><td colspan="2">%s %s</td></tr></tfoot>`,
+                count,
+                plural(count,"entry","entries"));
+            buffer.put(`</table>`);
+            
+            prepareFooter(buffer);
+            
+            req.reply(200, buffer.toBytes(), "text/html");
+            return REQUEST_OK;
+        })
+        .addRoute("GET", "/windows/headers", (ref HTTPRequest req)
+        {
+            scope OutBuffer buffer = new OutBuffer;
+            buffer.reserve(32 * 1024);
+            
+            prepareHeader(buffer, "Windows Headers | OEDB", ActiveTab.windows);
+            
+            buffer.put(`<p><a href="/windows/">Windows</a> / Headers</p>`);
+            buffer.put(`<h1>Windows Headers</h1>`);
+            buffer.put(
+                `<p>`~
+                `In computer software developments, a header file in C and C++ programming `~
+                `is a file often containing definitions of types, structures, external `~
+                `functions, and constant expressions that can be reused across multiple `~
+                `source files.`~
+                `</p>`
+            );
+            buffer.put(
+                `<p>`~
+                `While official Windows header files can be found in the Windows SDK `~
+                `and Visual Studio installations, the current source is from the convenient `~
+                `Microsoft Error Lookup tool.`~
+                `</p>`
+            );
+            buffer.put(`<p>A list of headers can be found below.</p>`);
+            
+            WindowsHeader[] winheaders = databaseWindowsHeaders();
+            buffer.put(`<table class="table">`);
+            buffer.put(`<thead><tr><th>Name</th><th>Abstract</th></tr></thead>`);
+            buffer.put(`<tbody>`);
+            size_t count;
+            foreach (hdr; winheaders)
+            {
+                ++count;
+                buffer.put(`<tr>`);
+                buffer.writef(`<td><a href="/windows/header/%s">%s</a></td>`, hdr.key, hdr.name);
+                buffer.writef(`<td>%s</td>`, hdr.description);
+                buffer.put(`</tr>`);
+            }
+            buffer.put(`</tbody>`);
+            buffer.writef(`<tfoot><tr><td colspan="2">%s %s</td></tr></tfoot>`,
+                count,
+                plural(count,"entry","entries"));
+            buffer.put(`</table>`);
+            
+            prepareFooter(buffer);
+            
+            req.reply(200, buffer.toBytes(), "text/html");
+            return REQUEST_OK;
+        })
+        .addRoute("GET", "/search", (ref HTTPRequest req)
+        {
+            string query = req.param("q");
+            if (query == null)
+                throw new HttpServerException(400, "Bad Request", req);
+            
+            string escaped = escapeHtml(query);
+            
+            SearchResult[] results = search(query);
+            
+            scope OutBuffer buffer = new OutBuffer;
+            buffer.reserve(32 * 1024);
+            
+            prepareHeader(buffer, "Search | OEDB", ActiveTab.none, escaped);
+            
+            buffer.writef(`<h3>Results for %s</h3>`, escaped);
+            
+            if (results.length)
+            {
+                import std.format : sformat;
+                char[200] urlcodebuf = void;
+                string url_code = void;
+                string url_title = void;
+                string title_type = void;
+                
+                buffer.writef(`<p>%s results</p>`, results.length);
+                
+                foreach (result; results)
+                {
+                    buffer.put(`<article class="result">`);
+                    
+                    final switch (result.type) {
+                    case "windows-module":
+                        title_type = "Windows modules";
+                        url_title = cast(string)result.origId;
+                        url_code = cast(string)sformat(urlcodebuf, "/windows/code/%s", result.origId);
+                        break;
+                    case "windows-symbol":
+                        title_type = "Windows headers";
+                        url_title = cast(string)result.origId;
+                        url_code = cast(string)sformat(urlcodebuf, "/windows/error/%s", result.origId);
+                        break;
+                    case "crt":
+                        title_type = "C runtime";
+                        url_title = cast(string)result.name;
+                        url_code = cast(string)sformat(urlcodebuf, "/crt/%s#%s", result.name, result.origId);
+                        break;
+                    }
+                    
+                    buffer.put(`<div class="searchtitle">`);
+                    buffer.writef(`<a href="%s">%s</a>`, url_code, result.origId);
+                    buffer.put(`</div>`);
+                    
+                    buffer.put(`<div>`);
+                    buffer.put(title_type);
+                    buffer.put(" - ");
+                    buffer.put(result.name);
+                    buffer.put(`</div>`);
+                    
+                    if (result.needle)
+                    {
+                        buffer.writef(`<p>%s<u>%s</u>%s</p>`, result.pre, result.needle, result.post);
+                    }
+                    
+                    buffer.put(`</article>`);
+                } // foreach results
+            }
+            else
+            {
+                buffer.put(`<h3>No results found.</h3>`);
+            }
+            
+            prepareFooter(buffer);
+            
+            req.reply(200, buffer.toBytes(), "text/html");
+            return REQUEST_OK;
         })
         //
-        // pub content, too lazy to make generic FS access stuff
+        // pub content
+        // remember, FS stuff in vibe-d ballooned memory usage in problematic ways
         //
         .addRoute("GET", "/favicon.png", (ref HTTPRequest req)
         {
             req.reply(200, buffer_favicon_png, "image/png");
+            return REQUEST_OK;
         })
         .addRoute("GET", "/theme.js", (ref HTTPRequest req)
         {
             req.reply(200, buffer_theme_js, "text/javascript");
+            return REQUEST_OK;
         })
         .addRoute("GET", "/main.css", (ref HTTPRequest req)
         {
             req.reply(200, buffer_main_css, "text/css");
+            return REQUEST_OK;
         })
         .addRoute("GET", "/chota.min.css", (ref HTTPRequest req)
         {
             req.reply(200, buffer_chota_min_css, "text/css");
+            return REQUEST_OK;
         })
         .addRoute("GET", "/humans.txt", (ref HTTPRequest req)
         {
             req.reply(200, buffer_humans_txt, "text/plain");
+            return REQUEST_OK;
         })
         .addRoute("GET", "/robots.txt", (ref HTTPRequest req)
         {
             req.reply(200, buffer_robots_txt, "text/plain");
+            return REQUEST_OK;
+        })
+        .addRoute("GET", "/noscript.css", (ref HTTPRequest req)
+        {
+            req.reply(200, buffer_noscript_css, "text/plain");
+            return REQUEST_OK;
         })
     ;
     
