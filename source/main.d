@@ -882,20 +882,25 @@ int main(string[] args)
         })
         .addRoute("GET", "/search", (ref HTTPRequest req)
         {
+            import std.datetime.stopwatch : StopWatch;
+            
             string query = req.param("q");
             if (query == null)
                 throw new HttpServerException(400, "Bad Request", req);
             
             string escaped = escapeHtml(query);
             
+            StopWatch sw;
+            sw.start();
             SearchResult[] results = search(query);
+            sw.stop();
             
             scope OutBuffer buffer = new OutBuffer;
             buffer.reserve(32 * 1024);
             
             prepareHeader(buffer, "Search | OEDB", ActiveTab.none, escaped);
             
-            buffer.writef(`<h3>Results for %s</h3>`, escaped);
+            buffer.writef(`<h3>Results for "%s"</h3>`, escaped);
             
             if (results.length)
             {
@@ -905,7 +910,7 @@ int main(string[] args)
                 string url_title = void;
                 string title_type = void;
                 
-                buffer.writef(`<p>%s results</p>`, results.length);
+                buffer.writef(`<p>%s results - %s</p>`, results.length, sw.peek());
                 
                 foreach (result; results)
                 {
