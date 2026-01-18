@@ -4,7 +4,7 @@ authors "dd86k"
 copyright "None"
 license "CC0-1.0"
 
-# Extractor code, renamed folder to "extractcode" as it was
+# Extractor code, renamed folder to "extractor" as it was
 # conflicting with some weird linux folder behavior
 subPackage {
 	name "extract"
@@ -15,15 +15,11 @@ subPackage {
 }
 
 # Server code
-dependency "ddhttpd" path="../ddhttpd" version="*"
+dependency "ddhttpd" repository="git+https://github.com/dd86k/ddhttpd.git" version="c41b6913b2b3147cbda7f918dbbcad00741f69d0"
+
 
 buildType "debugv" {
 	buildOptions "debugMode"
 	dflags "-vgc" "-vtls" platform="dmd"
 	dflags "--vgc" platform="ldc"
 }
-
-# vibe.d linking TLS fix
-#subConfigurations "vibe-d:tls" "notls"
-versions "HaveNoTLS" # effective against vibe-http
-versions "VibeNoSSL" "VibeOutputCompactHTML" "VibeDisableCommandLineParsing" "VibeNoDefaultArgs"

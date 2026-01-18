@@ -198,47 +198,6 @@ int main(string[] args)
     databaseLoadFromFolder(odatafolder);
     writeln(" OK");
     
-    /*
-    scope URLRouter router = new URLRouter()
-        // Windows error by symbolic name
-        .get("/windows/error/:symbol", (HTTPServerRequest req, HTTPServerResponse res)
-        {
-            string symbolname = toLower( req.params["symbol"] );
-            
-            WindowsHeader winheader = void;
-            WindowsSymbolic winsymbol = databaseWindowsSymbolicByName(symbolname, winheader);
-            if (winsymbol.name == string.init)
-                throw new HTTPStatusException(404);
-            
-            // Associated facilities
-            ushort nstatus_facility_id = ntstatusFacilityIDByCode(winsymbol.id);
-            WindowsFacility ntstatus_facility = ntstatusFacilityById(nstatus_facility_id);
-            if (ntstatus_facility.name == string.init)
-            {
-                ntstatus_facility.name = "Unknown";
-                ntstatus_facility.id   = nstatus_facility_id;
-            }
-            ushort hresult_facility_id = hresultFacilityIDByCode(winsymbol.id);
-            WindowsFacility hresult_facility  = hresultFacilityById(hresult_facility_id);
-            if (hresult_facility.name == string.init)
-            {
-                hresult_facility.name = "Unknown";
-                hresult_facility.id   = hresult_facility_id;
-            }
-            
-            // Associated modules
-            SearchWindowsModuleResult[] modules = searchWindowsModulesByCode(winsymbol.id);
-            
-            PageSettings page = PageSettings(ActiveTab.windows, winsymbol.name~" | OEDB");
-            res.render!("windows-symbolic.dt", page,
-                winsymbol, winheader,
-                ntstatus_facility,
-                hresult_facility,
-                modules);
-        })
-    ;
-    */
-    
     // Reading it once into memory to reduce I/O and load times
     write("Pre-caching public resources..."); stdout.flush();
     ubyte[] buffer_chota_min_css = cast(ubyte[])readAll( "pub/chota.min.css" );
@@ -499,12 +458,11 @@ int main(string[] args)
             
             prepareHeader(buffer, "Windows Error Types | OEDB", ActiveTab.windows);
             
-            buffer.put(`<p><a href="/windows/">Windows</a> / Error types</p>`);
-            buffer.put(`<h1>Windows Error Formats</h1>`);
-            buffer.put(`<p>Windows contains a vast number of error codes in various formats. `~
-                `This document explains the Win32, HRESULT, NTSTATUS, and LSTATUS error codes.</p>`);
-            
             buffer.put(
+                `<p><a href="/windows/">Windows</a> / Error types</p>`~
+                `<h1>Windows Error Formats</h1>`~
+                `<p>Windows contains a vast number of error codes in various formats. `~
+                `This document explains the Win32, HRESULT, NTSTATUS, and LSTATUS error codes.</p>`~
                 `<h2 id="win32">Win32</h2>`~
                 `<p>`~
                 `Win32 <abbr tittle="Application Programming Interface">API</abbr> error `~
@@ -515,9 +473,7 @@ int main(string[] args)
                 `All Windows error code should fit under 16-bit numbers between 0x0 (0) to `~
                 `0xffff (65,535). However, some error codes may use a 32-bit number space `~
                 `with extended fields (ie, <a href="#hresult">HRESULT</a>).`~
-                `</p>`
-            );
-            buffer.put(
+                `</p>`~
                 `<h2 id="hresult">HRESULT</h2>`~
                 `<p>`~
                 `HRESULT codes are used under the <abbr title="Component Object Model">COM</abbr> `~
@@ -525,9 +481,7 @@ int main(string[] args)
                 `</p>`~
                 `<p>`~
                 `The table below denotes the structure of a HRESULT code.`~
-                `</p>`
-            );
-            buffer.put(
+                `</p>`~
                 `<table class=table>`~
                 `<tr>`~
                     `<th>31</th><th>30</th><th>29</th><th>28</th><th>27</th><th colspan="11">`~
@@ -543,10 +497,8 @@ int main(string[] args)
                 `<tr>`~
                     `<td colspan="16">Code</td>`~
                 `</tr>`~
-                `</table>`
-            );
-            buffer.put(`<p>Legend</p>`);
-            buffer.put(
+                `</table>`~
+                `<p>Legend</p>`~
                 `<ul>`~
                 `<li>S (1 bit): Severity. If set, indicates a failure result. If clear, indicates a success result.</li>`~
                 `<li>R (1 bit): Reserved. This bit must be cleared.</li>`~
@@ -555,14 +507,13 @@ int main(string[] args)
                 `<li>X (1 bit): Reserved. Should be cleared, at the exception of a few codes described further below.</li>`~
                 `<li>Facility (11 bits): Error source. A list of facilities are listed further below.</li>`~
                 `<li>Code (16 bits): Error code.</li>`~
-                `</ul>`
+                `</ul>`~
+                `<h3>HRESULT Facilities</h3>`~
+                `<p>The table below lists facilities defined in the MS-ERREF specification.</p>`~
+                `<table class="table">`~
+                `<thead><tr><th>Name</th><th>Value</th><th>Description</th></tr></thead>`~
+                `<tbody>`
             );
-            
-            buffer.put(`<h3>HRESULT Facilities</h3>`);
-            buffer.put(`<p>The table below lists facilities defined in the MS-ERREF specification.</p>`);
-            buffer.put(`<table class="table">`);
-            buffer.put(`<thead><tr><th>Name</th><th>Value</th><th>Description</th></tr></thead>`);
-            buffer.put(`<tbody>`);
             immutable(WindowsFacility)[] hresult_facility_list = getWindowsHResultFacilities();
             foreach (facility; hresult_facility_list)
             {
@@ -573,24 +524,22 @@ int main(string[] args)
                     facility.id, facility.name, facility.description
                 );
             }
-            buffer.put(`</tbody>`);
-            buffer.put(`</table>`);
-            
-            buffer.put(`<p>Some HRESULT codes, as exceptions, have the X bit set. They are listed below.</p>`);
-            buffer.put(`<table class="table">`);
-            buffer.put(`<thead><tr><th>Name</th><th>Value</th></tr></thead>`);
-            buffer.put(`<tbody>`);
-            buffer.put(`<tr><td>0x0DEAD100</td><td>TRK_S_OUT_OF_SYNC</td></tr>`);
-            buffer.put(`<tr><td>0x0DEAD102</td><td>TRK_VOLUME_NOT_FOUND</td></tr>`);
-            buffer.put(`<tr><td>0x0DEAD103</td><td>TRK_VOLUME_NOT_OWNED</td></tr>`);
-            buffer.put(`<tr><td>0x0DEAD107</td><td>TRK_S_NOTIFICATION_QUOTA_EXCEEDED</td></tr>`);
-            buffer.put(`<tr><td>0x8DEAD01B</td><td>TRK_E_NOT_FOUND</td></tr>`);
-            buffer.put(`<tr><td>0x8DEAD01C</td><td>TRK_E_VOLUME_QUOTA_EXCEEDED</td></tr>`);
-            buffer.put(`<tr><td>0x8DEAD01E</td><td>TRK_SERVER_TOO_BUSY</td></tr>`);
-            buffer.put(`</tbody>`);
-            buffer.put(`</table>`);
+            buffer.put(`</tbody></table>`);
             
             buffer.put(
+                `<p>Some HRESULT codes, as exceptions, have the X bit set. They are listed below.</p>`~
+                `<table class="table">`~
+                `<thead><tr><th>Name</th><th>Value</th></tr></thead>`~
+                `<tbody>`~
+                `<tr><td>0x0DEAD100</td><td>TRK_S_OUT_OF_SYNC</td></tr>`~
+                `<tr><td>0x0DEAD102</td><td>TRK_VOLUME_NOT_FOUND</td></tr>`~
+                `<tr><td>0x0DEAD103</td><td>TRK_VOLUME_NOT_OWNED</td></tr>`~
+                `<tr><td>0x0DEAD107</td><td>TRK_S_NOTIFICATION_QUOTA_EXCEEDED</td></tr>`~
+                `<tr><td>0x8DEAD01B</td><td>TRK_E_NOT_FOUND</td></tr>`~
+                `<tr><td>0x8DEAD01C</td><td>TRK_E_VOLUME_QUOTA_EXCEEDED</td></tr>`~
+                `<tr><td>0x8DEAD01E</td><td>TRK_SERVER_TOO_BUSY</td></tr>`~
+                `</tbody>`~
+                `</table>`~
                 `<p>`~
                 `Converting Win32 error codes to an HRESULT code is done with the`~
                 `following C macro.`~
@@ -598,90 +547,85 @@ int main(string[] args)
                 `<pre>`~
                 `#define FACILITY_WIN32 0x0007`~"\n"~
                 `#define __HRESULT_FROM_WIN32(x) ((HRESULT)(x) <= 0 ? ((HRESULT)(x)) : ((HRESULT) (((x) & 0x0000FFFF) | (FACILITY_WIN32 << 16) | 0x80000000)))`~
-                `</pre>`
-            );
-            
-            buffer.put(`<h2 class="ntstatus">NTSTATUS</h2>`);
-            buffer.put(
+                `</pre>`~
+                `<h2 class="ntstatus">NTSTATUS</h2>`~
                 `<p>`~
                 `NTSTATUS error codes are typically used for low-level operations `~
                 `such as machine check exceptions, debugger API, and the `~
                 `<abbr title="Windows-on-Windows64">SysWOW64</abbr> 32-bit `~
                 `application layer, communicated from the WindowsNT kernel.`~
-                `</p>`
+                `</p>`~
+                `<p>These codes are defined in <code>Ntdef.h</code> and have the following structure.</p>`~
+                `<table class="table">`~
+                `<tr>`~
+                `<th colspan="2"><span style="float: left">31</span> <span style="float: right">30</span></th>`~
+                `<th>29</th>`~
+                `<th>28</th>`~
+                `<th colspan="12"><span style="float: left">27</span> <span style="float: right">16</span></th>`~
+                `</tr>`~
+                `<tr>`~
+                `<td colspan="2">Sev</td>`~
+                `<td>C</td>`~
+                `<td>N</td>`~
+                `<td colspan="12">Facility</td>`~
+                `</tr>`~
+                `<tr>`~
+                `<th colspan="16"><span style="float: left">15</span> <span style="float: right">0</span></th>`~
+                `</tr>`~
+                `</tr>`~
+                `<td colspan="16">Code</td>`~
+                `</tr>`~
+                `</table>`~
+                `<p>Legend</p>`~
+                `<ul>`~
+                `<li>Sev (2 bits): Severity. Severity values are listed further below.</li>`~
+                `<li>C (1 bit): Customer. Microsoft codes have this bit cleared.</li>`~
+                `<li>N (1 bit): Reserved. Must be cleared so it can correspond to a HRESULT.</li>`~
+                `<li>Facility (12 bits): Source facility.</li>`~
+                `<li>Code (16 bits): Error code.</li>`~
+                `</ul>`~
+                `<h3>NTSTATUS Severities</h3>`~
+                `<table class="table">`~
+                `<tr>`~
+                `<th>Value</th>`~
+                `<th>Name</th>`~
+                `<th>Description</th>`~
+                `</tr>`~
+                `<tr>`~
+                `<td>0x0</td>`~
+                `<td>STATUS_SEVERITY_SUCCESS</td>`~
+                `<td>Success.</td>`~
+                `</tr>`~
+                `<tr>`~
+                `<td>0x0</td>`~
+                `<td>STATUS_SEVERITY_SUCCESS</td>`~
+                `<td>Success.</td>`~
+                `</tr>`~
+                `<tr>`~
+                `<td>0x1</td>`~
+                `<td>STATUS_SEVERITY_INFORMATIONAL</td>`~
+                `<td>Informational.</td>`~
+                `</tr>`~
+                `<tr>`~
+                `<td>0x2</td>`~
+                `<td>STATUS_SEVERITY_WARNING</td>`~
+                `<td>Warning.</td>`~
+                `</tr>`~
+                `<tr>`~
+                `<td>0x3</td>`~
+                `<td>STATUS_SEVERITY_ERROR</td>`~
+                `<td>Error.</td>`~
+                `</tr>`~
+                `</table>`
             );
-            buffer.put(`<p>These codes are defined in <code>Ntdef.h</code> and have the following structure.</p>`);
             
-            buffer.put(`<table class="table">`);
-            buffer.put(`<tr>`);
-            buffer.put(`<th colspan="2"><span style="float: left">31</span> <span style="float: right">30</span></th>`);
-            buffer.put(`<th>29</th>`);
-            buffer.put(`<th>28</th>`);
-            buffer.put(`<th colspan="12"><span style="float: left">27</span> <span style="float: right">16</span></th>`);
-            buffer.put(`</tr>`);
-            buffer.put(`<tr>`);
-            buffer.put(`<td colspan="2">Sev</td>`);
-            buffer.put(`<td>C</td>`);
-            buffer.put(`<td>N</td>`);
-            buffer.put(`<td colspan="12">Facility</td>`);
-            buffer.put(`</tr>`);
-            buffer.put(`<tr>`);
-            buffer.put(`<th colspan="16"><span style="float: left">15</span> <span style="float: right">0</span></th>`);
-            buffer.put(`</tr>`);
-            buffer.put(`</tr>`);
-            buffer.put(`<td colspan="16">Code</td>`);
-            buffer.put(`</tr>`);
-            buffer.put(`</table>`);
-            
-            buffer.put(`<p>Legend</p>`);
-            buffer.put(`<ul>`);
-            buffer.put(`<li>Sev (2 bits): Severity. Severity values are listed further below.</li>`);
-            buffer.put(`<li>C (1 bit): Customer. Microsoft codes have this bit cleared.</li>`);
-            buffer.put(`<li>N (1 bit): Reserved. Must be cleared so it can correspond to a HRESULT.</li>`);
-            buffer.put(`<li>Facility (12 bits): Source facility.</li>`);
-            buffer.put(`<li>Code (16 bits): Error code.</li>`);
-            buffer.put(`</ul>`);
-            
-            buffer.put(`<h3>NTSTATUS Severities</h3>`);
-            buffer.put(`<table class="table">`);
-            buffer.put(`<tr>`);
-            buffer.put(`<th>Value</th>`);
-            buffer.put(`<th>Name</th>`);
-            buffer.put(`<th>Description</th>`);
-            buffer.put(`</tr>`);
-            buffer.put(`<tr>`);
-            buffer.put(`<td>0x0</td>`);
-            buffer.put(`<td>STATUS_SEVERITY_SUCCESS</td>`);
-            buffer.put(`<td>Success.</td>`);
-            buffer.put(`</tr>`);
-            buffer.put(`<tr>`);
-            buffer.put(`<td>0x0</td>`);
-            buffer.put(`<td>STATUS_SEVERITY_SUCCESS</td>`);
-            buffer.put(`<td>Success.</td>`);
-            buffer.put(`</tr>`);
-            buffer.put(`<tr>`);
-            buffer.put(`<td>0x1</td>`);
-            buffer.put(`<td>STATUS_SEVERITY_INFORMATIONAL</td>`);
-            buffer.put(`<td>Informational.</td>`);
-            buffer.put(`</tr>`);
-            buffer.put(`<tr>`);
-            buffer.put(`<td>0x2</td>`);
-            buffer.put(`<td>STATUS_SEVERITY_WARNING</td>`);
-            buffer.put(`<td>Warning.</td>`);
-            buffer.put(`</tr>`);
-            buffer.put(`<tr>`);
-            buffer.put(`<td>0x3</td>`);
-            buffer.put(`<td>STATUS_SEVERITY_ERROR</td>`);
-            buffer.put(`<td>Error.</td>`);
-            buffer.put(`</tr>`);
-            buffer.put(`</table>`);
-            
-            
-            buffer.put(`<h3>NTSTATUS Facilities</h3>`);
-            buffer.put(`<p>The table below lists facilities defined in the MS-ERREF specification.</p>`);
-            buffer.put(`<table class="table">`);
-            buffer.put(`<thead><tr><th>Name</th><th>Value</th><th>Description</th></tr></thead>`);
-            buffer.put(`<tbody>`);
+            buffer.put(
+                `<h3>NTSTATUS Facilities</h3>`~
+                `<p>The table below lists facilities defined in the MS-ERREF specification.</p>`~
+                `<table class="table">`~
+                `<thead><tr><th>Name</th><th>Value</th><th>Description</th></tr></thead>`~
+                `<tbody>`
+            );
             immutable(WindowsFacility)[] ntstatus_facility_list = getWindowsNtstatusFacilities();
             foreach (facility; ntstatus_facility_list)
             {
@@ -692,11 +636,10 @@ int main(string[] args)
                     facility.id, facility.name, facility.description
                 );
             }
-            buffer.put(`</tbody>`);
-            buffer.put(`</table>`);
+            buffer.put(`</tbody></table>`);
             
-            buffer.put(`<h2 id="lstatus">LSTATUS</h2>`);
             buffer.put(
+                `<h2 id="lstatus">LSTATUS</h2>`~
                 `<p>`~
                 `The LSTATUS codes are legacy error codes used in some Windows functions. `~
                 `The 'L' in LSTATUS connotates the Windows <code>LONG</code> data type, `~
@@ -728,22 +671,24 @@ int main(string[] args)
             
             prepareHeader(buffer, "Windows Modules | OEDB", ActiveTab.windows);
             
-            buffer.put(`<p><a href="/windows/">Windows</a> / Modules</p>`);
-            buffer.put(`<h1>Windows Modules</h1>`);
             buffer.put(
+                `<p><a href="/windows/">Windows</a> / Modules</p>`~
+                `<h1>Windows Modules</h1>`~
                 `<p>`~
                 `Also known as a dynamic library, or in the context of Windows, a DLL, `~
                 `a module, that can be dynamically loaded onto memory, that may contain `~
                 `code and resources. Resources include images, pieces of texts (strings), `~
                 `certificates, and more.`~
-                `</p>`
+                `</p>`~
+                `<p>Some modules listed below may include executable images (.exe files).</p>`
             );
-            buffer.put(`<p>Some modules listed below may include executable images (.exe files).</p>`);
             
             WindowsModule[] modulelist = databaseWindowsModules();
-            buffer.put(`<table class="table">`);
-            buffer.put(`<thead><tr><th>Name</th><th>Description</th></tr></thead>`);
-            buffer.put(`<tbody>`);
+            buffer.put(
+                `<table class="table">`~
+                `<thead><tr><th>Name</th><th>Description</th></tr></thead>`~
+                `<tbody>`
+            );
             size_t count;
             foreach (mod; modulelist)
             {
@@ -771,17 +716,15 @@ int main(string[] args)
             
             prepareHeader(buffer, "Windows Headers | OEDB", ActiveTab.windows);
             
-            buffer.put(`<p><a href="/windows/">Windows</a> / Headers</p>`);
-            buffer.put(`<h1>Windows Headers</h1>`);
             buffer.put(
+                `<p><a href="/windows/">Windows</a> / Headers</p>`~
+                `<h1>Windows Headers</h1>`~
                 `<p>`~
                 `In computer software developments, a header file in C and C++ programming `~
                 `is a file often containing definitions of types, structures, external `~
                 `functions, and constant expressions that can be reused across multiple `~
                 `source files.`~
-                `</p>`
-            );
-            buffer.put(
+                `</p>`~
                 `<p>`~
                 `While official Windows header files can be found in the Windows SDK `~
                 `and Visual Studio installations, the current source is from the convenient `~
@@ -898,11 +841,11 @@ int main(string[] args)
         })
         .addRoute("GET", "/windows/header/:header", (ref HTTPRequest req)
         {
-            string *qheader = "header" in req.params;
-            if (qheader == null)
+            string header = req.params["header"];
+            if (header.length == 0)
                 throw new HttpServerException(HTTPStatus.badRequest, HTTPMsg.badRequest, req);
             
-            WindowsHeader winheader = databaseWindowsHeader( *qheader );
+            WindowsHeader winheader = databaseWindowsHeader( header );
             if (winheader.name == string.init)
                 throw new HttpServerException(HTTPStatus.notFound, HTTPMsg.notFound, req);
             
@@ -947,11 +890,11 @@ int main(string[] args)
         })
         .addRoute("GET", "/windows/module/:module", (ref HTTPRequest req)
         {
-            string *qmodule = "module" in req.params;
-            if (qmodule == null)
+            string module_ = req.params["module"];
+            if (module_ == null)
                 throw new HttpServerException(HTTPStatus.badRequest, HTTPMsg.badRequest, req);
             
-            WindowsModule mod = databaseWindowsModule(*qmodule);
+            WindowsModule mod = databaseWindowsModule(module_);
             if (mod.name == string.init)
                 throw new HttpServerException(HTTPStatus.notFound, HTTPMsg.notFound, req);
             
@@ -1000,13 +943,13 @@ int main(string[] args)
         })
         .addRoute("GET", "/windows/code/:code", (ref HTTPRequest req)
         {
-            string *qcode = "code" in req.params;
-            if (qcode == null)
+            string qcode = req.params["code"];
+            if (qcode.length == 0)
                 throw new HttpServerException(HTTPStatus.badRequest, HTTPMsg.badRequest, req);
             
             // Throws if input too big anyway
             uint code = void;
-            if (parseCode(*qcode, code) == false)
+            if (parseCode(qcode, code) == false)
                 throw new HttpServerException(HTTPStatus.badRequest, HTTPMsg.badRequest, req);
             
             // Associated facilities
