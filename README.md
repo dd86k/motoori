@@ -19,12 +19,14 @@ This repo contains both the website platform and extractors.
 - `data`: Used for loading data
 - `pub`: Public files for HTTP server
 - `source`: Source for HTTP server
-- `views`: Pug template views for HTTP server
+
+Making a static site generator would be pointless, we're talking potentially
+hundreds of thousands of files. Plus, a search feature is nice.
 
 # Building the Database
 
 Requirements:
-- A recent D compiler. GDC might have issues compiling vibe-d.
+- A recent D compiler.
 - A recent version of DUB.
 - Windows install for headers and module entries.
 - [Microsoft Error Lookup tool](https://docs.microsoft.com/en-us/windows/win32/debug/system-error-code-lookup-tool).
@@ -55,3 +57,5 @@ Issues:
 
 Usually just `dub` to build and run a debug build.
 `dub build -b release --compiler=ldc2` for releases.
+
+You will need libmicrohttpd dynamic libraries.
