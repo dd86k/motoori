@@ -1096,6 +1096,99 @@ int main(string[] args)
             req.reply(200, buffer.toBytes(), "text/html");
             return REQUEST_OK;
         })
+        .addRoute("GET", "/windows/error/:symbol", (ref HTTPRequest req)
+        {
+            string qsymbol = req.params["symbol"];
+            if (qsymbol.length == 0)
+                throw new HttpServerException(HTTPStatus.badRequest, HTTPMsg.badRequest, req);
+            
+            string symbolname = toLower(qsymbol);
+            
+            WindowsHeader winheader = void;
+            WindowsSymbolic winsymbol = databaseWindowsSymbolicByName(symbolname, winheader);
+            if (winsymbol.name == string.init)
+                throw new HttpServerException(HTTPStatus.notFound, HTTPMsg.notFound, req);;
+            
+            // Associated facilities
+            ushort nstatus_facility_id = ntstatusFacilityIDByCode(winsymbol.id);
+            WindowsFacility ntstatus_facility = ntstatusFacilityById(nstatus_facility_id);
+            if (ntstatus_facility.name == string.init)
+            {
+                ntstatus_facility.name = "Unknown";
+                ntstatus_facility.id   = nstatus_facility_id;
+            }
+            ushort hresult_facility_id = hresultFacilityIDByCode(winsymbol.id);
+            WindowsFacility hresult_facility  = hresultFacilityById(hresult_facility_id);
+            if (hresult_facility.name == string.init)
+            {
+                hresult_facility.name = "Unknown";
+                hresult_facility.id   = hresult_facility_id;
+            }
+            
+            // Associated modules
+            SearchWindowsModuleResult[] modules = searchWindowsModulesByCode(winsymbol.id);
+            
+            scope OutBuffer buffer = new OutBuffer;
+            buffer.reserve(8 * 1024);
+            
+            prepareHeader(buffer, format("%s | OEDB", winsymbol.name), ActiveTab.windows);
+            
+            buffer.writef(
+                `<p>`~
+                `<a href="/windows/">Windows</a> / `~
+                `<a href="/windows/headers">Headers</a> / `~
+                `<a href="/windows/header/%s">%s</a> / `~
+                `%s`~
+                `</p>`,
+                winheader.name, winheader.name, winsymbol.name
+            );
+            buffer.writef(`<h1>%s</h1>`, winsymbol.name);
+            buffer.writef(`<p>Code: %s (%s)</p>`, winsymbol.origId, winsymbol.decId);
+            buffer.writef(`<p>HRESULT Facility: %s (%s)</p>`, hresult_facility.name, hresult_facility.id);
+            buffer.writef(`<p>NTSTATUS Facility: %s (%s)</p>`, ntstatus_facility.name, ntstatus_facility.id);
+            
+            if (winsymbol.message.length)
+            {
+                buffer.writef(
+                    `<h2>Abstract</h2>`~
+                    `<p>%s</p>`,
+                    winsymbol.message
+                );
+            }
+            
+            if (modules.length)
+            {
+                buffer.put(`<h2>Associated Modules</h2>`);
+                buffer.put(`<table>`);
+                buffer.put(`<thead><tr><th>Module</th><th>Code</th><th>Description</th></tr></thead>`);
+                buffer.put(`<tbody>`);
+                size_t count_mods;
+                foreach (mod; modules)
+                {
+                    ++count_mods;
+                    
+                    with (mod)
+                    buffer.writef(
+                        `<tr>`~
+                        `<td><a href="/windows/module/%s">%s</a></td>`~
+                        `<td><a href="/windows/code/%s">%s</a></td>`~
+                        `<td>%s</td>`~
+                        `</tr>`,
+                        module_.name, module_.name,
+                        error.origId, error.origId,
+                        error.message
+                    );
+                }
+                buffer.put(`</tbody><tfoot>`);
+                buffer.writef(`<tr><td colspan="3">%s %s</td></tr>`, count_mods, plural(count_mods,"entry","entries"));
+                buffer.put(`</tfoot></table>`);
+            }
+            
+            prepareFooter(buffer);
+            
+            req.reply(200, buffer.toBytes(), "text/html");
+            return REQUEST_OK;
+        })
         //
         // pub content
         // remember, FS stuff in vibe-d ballooned memory usage in problematic ways
