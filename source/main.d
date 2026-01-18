@@ -131,15 +131,10 @@ void pageCrt(OutBuffer buffer, ref DatabaseCrt crt)
     
     buffer.put(`</tbody></table>`);
 }
-//void pageModule(OutBuffer buffer, )
-//void pageHeader(OutBuffer buffer, )
 
-/// Used to modify page settings
-struct PageSettings
-{
-    ActiveTab tab;
-    const(char)[] title; // for tab
-}
+//
+// CLI
+//
 
 static immutable string PAGE_VERSION =
 `motoori `~PROJECT_VERSION~` (built: `~__TIMESTAMP__~`)
@@ -205,18 +200,6 @@ int main(string[] args)
     
     /*
     scope URLRouter router = new URLRouter()
-        // Windows module details
-        .get("/windows/module/:module", (HTTPServerRequest req, HTTPServerResponse res)
-        {
-            string paramModule = req.params["module"];
-            
-            WindowsModule mod = databaseWindowsModule(paramModule);
-            if (mod.name == string.init)
-                throw new HTTPStatusException(404);
-            
-            PageSettings page = PageSettings(ActiveTab.windows, mod.name~" | OEDB");
-            res.render!("windows-module.dt", page, mod);
-        })
         // Windows error by symbolic name
         .get("/windows/error/:symbol", (HTTPServerRequest req, HTTPServerResponse res)
         {
@@ -962,12 +945,10 @@ int main(string[] args)
             if (winheader.name == string.init)
                 throw new HttpServerException(HTTPStatus.notFound, HTTPMsg.notFound, req);
             
-            string header = escapeHtml(*qheader);
-            
             scope OutBuffer buffer = new OutBuffer;
-            buffer.reserve(4 * 1024);
+            buffer.reserve(8 * 1024);
             
-            prepareHeader(buffer, format("%s | OEDB", header), ActiveTab.windows);
+            prepareHeader(buffer, format("%s | OEDB", winheader.name), ActiveTab.windows);
             
             buffer.writef(
                 `<p><a href="/windows/">Windows</a> / <a href="/windows/headers">Headers</a> / %s</p>`, winheader.key);
@@ -995,6 +976,59 @@ int main(string[] args)
             buffer.put(`</tbody>`);
             buffer.put(`<tfoot>`);
             buffer.writef(`<tr><td colspan="3">%s %s</td></tr>`, count, plural(count,"entry","entries"));
+            buffer.put(`</tfoot>`);
+            buffer.put(`</table>`);
+            
+            prepareFooter(buffer);
+            
+            req.reply(200, buffer.toBytes(), "text/html");
+            return REQUEST_OK;
+        })
+        .addRoute("GET", "/windows/module/:module", (ref HTTPRequest req)
+        {
+            string *qmodule = "module" in req.params;
+            if (qmodule == null)
+                throw new HttpServerException(HTTPStatus.badRequest, HTTPMsg.badRequest, req);
+            
+            WindowsModule mod = databaseWindowsModule(*qmodule);
+            if (mod.name == string.init)
+                throw new HttpServerException(HTTPStatus.notFound, HTTPMsg.notFound, req);
+            
+            scope OutBuffer buffer = new OutBuffer;
+            buffer.reserve(8 * 1024);
+            
+            prepareHeader(buffer, format("%s | OEDB", mod.name), ActiveTab.none);
+            
+            buffer.writef(`<p><a href="/windows/">Windows</a> / <a href="/windows/modules">Modules</a> / %s</p>`, mod.name);
+            buffer.writef(`<h1>%s</h1>`, mod.name);
+            buffer.writef(`<p>%s</p>`, mod.description);
+            
+            buffer.put(`<h2>Associated Error Codes</h2>`);
+            buffer.put(`<p>Below lists error codes and symbolic names found for this module.</p>`);
+            
+            buffer.put(`<table>`);
+            buffer.put(`<thead><tr><th>Code</th><th>Description</th></tr></thead>`);
+            buffer.put(`<tbody>`);
+            size_t count;
+            foreach (err; mod.messages)
+            {
+                ++count;
+                
+                import utils : sformatWindowsCode;
+                char[32] buf = void;
+                // "shorten" the error code for URL and readability
+                string formal = sformatWindowsCode(buf, err.id);
+                buffer.writef(
+                    `<tr>`~
+                    `<td><a href="/windows/code/%s">%s</a></td>`~
+                    `<td>%s</td>`~
+                    `</tr>`,
+                    formal, formal, err.message
+                );
+            }
+            buffer.put(`</tbody>`);
+            buffer.put(`<tfoot>`);
+            buffer.writef(`<tr><td colspan="2">%s %s</td></tr>`, count, plural(count,"entry","entries"));
             buffer.put(`</tfoot>`);
             buffer.put(`</table>`);
             
