@@ -97,17 +97,13 @@ private void databaseLoadWindowsHeaders(string path)
         
         foreach (ref JSONValue jsym; jheader["symbolics"].array)
         {
-            bool success = void;
-            
             WindowsSymbolic sym;
             sym.name    = jsym["name"].str.idup;
             sym.key     = toLower(sym.name);
             sym.message = jsym["description"].str.idup;
             sym.origId  = jsym["id"].str.idup;
-            sym.id      = parseCode( sym.origId, success );
             sym.decId   = text(sym.id);
-            
-            if (success == false)
+            if (parseCode(sym.origId, sym.id) == false)
                 stderr.writeln("warning: parsing code '", sym.origId, "' failed");
             
             winheader.symbolics ~= sym;
@@ -208,14 +204,10 @@ private void databaseLoadWindowsModules(string path)
         WindowsModuleError[] errors;
         foreach (ref JSONValue jerror; jmodule["messages"].array)
         {
-            bool success;
-            
             WindowsModuleError error;
             error.message = jerror["message"].str.idup;
             error.origId  = jerror["code"].str.idup;
-            error.id      = parseCode(error.origId, success);
-            
-            if (success == false)
+            if (parseCode(error.origId, error.id) == false)
                 stderr.writeln("warning: parsing code '", error.origId, "' failed");
             
             errors ~= error;
@@ -388,8 +380,8 @@ private const(char)[] postSnip(const(char)[] text, const(char)[] input, ptrdiff_
 
 SearchResult[] search(string input)
 {
-    bool iscode = void;
-    uint code = parseCode(input, iscode);
+    uint code = void;
+    bool iscode = parseCode(input, code);
     
     SearchResult[] results;
     

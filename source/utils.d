@@ -9,22 +9,6 @@ string sformatWindowsCode(char[] buffer, uint code)
 
 import core.stdc.stdio : sscanf;
 
-deprecated("Use parseCode(const(char)[], out uint)")
-uint parseCode(const(char)[] input, out bool success)
-{
-    char[32] buffer = void;
-    
-    if (input.length >= buffer.length)
-        throw new Exception("Buffer too small");
-    
-    buffer[0..input.length] = input[];
-    buffer[input.length] = 0;
-    
-    uint code = void;
-    success = sscanf(buffer.ptr, "%i", cast(int*)&code) >= 1;
-    return code;
-}
-
 bool parseCode(const(char)[] input, out uint code)
 {
     char[32] buffer = void;
@@ -58,6 +42,7 @@ unittest
     assert(parseCode("Hello", code) == false);
 }
 
+pragma(inline, true)
 string plural(size_t count, string single, string multi)
 {
     return count == 1 ? single : multi;
