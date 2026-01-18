@@ -205,16 +205,6 @@ int main(string[] args)
     
     /*
     scope URLRouter router = new URLRouter()
-        // Windows header details
-        .get("/windows/header/:header", (HTTPServerRequest req, HTTPServerResponse res)
-        {
-            WindowsHeader winheader = databaseWindowsHeader( req.params["header"] );
-            if (winheader.name == string.init)
-                throw new HTTPStatusException(HTTPStatus.notFound);
-            
-            PageSettings page = PageSettings(ActiveTab.windows, winheader.name~" | OEDB");
-            res.render!("windows-header.dt", page, winheader);
-        })
         // Windows module details
         .get("/windows/module/:module", (HTTPServerRequest req, HTTPServerResponse res)
         {
@@ -956,6 +946,57 @@ int main(string[] args)
             {
                 buffer.put(`<h3>No results found.</h3>`);
             }
+            
+            prepareFooter(buffer);
+            
+            req.reply(200, buffer.toBytes(), "text/html");
+            return REQUEST_OK;
+        })
+        .addRoute("GET", "/windows/header/:header", (ref HTTPRequest req)
+        {
+            string *qheader = "header" in req.params;
+            if (qheader == null)
+                throw new HttpServerException(HTTPStatus.badRequest, HTTPMsg.badRequest, req);
+            
+            WindowsHeader winheader = databaseWindowsHeader( *qheader );
+            if (winheader.name == string.init)
+                throw new HttpServerException(HTTPStatus.notFound, HTTPMsg.notFound, req);
+            
+            string header = escapeHtml(*qheader);
+            
+            scope OutBuffer buffer = new OutBuffer;
+            buffer.reserve(4 * 1024);
+            
+            prepareHeader(buffer, format("%s | OEDB", header), ActiveTab.windows);
+            
+            buffer.writef(
+                `<p><a href="/windows/">Windows</a> / <a href="/windows/headers">Headers</a> / %s</p>`, winheader.key);
+            buffer.writef(`<h1>%s</h1>`, winheader.name);
+            buffer.writef(`<p>%s</p>`, winheader.description);
+            buffer.put(`<h2>Associated Error Codes</h2>`);
+            buffer.put(`<p>Below is a list of error codes found for this header.</p>`);
+            buffer.put(`<table>`);
+            buffer.put(`<thead>`);
+            buffer.put(`<tr><th>Symbolic</th><th>Value</th><th>Description</th></tr>`);
+            buffer.put(`</thead>`);
+            buffer.put(`<tbody>`);
+            size_t count;
+            foreach (sym; winheader.symbolics)
+            {
+                ++count;
+                buffer.put(`<tr>`);
+                buffer.writef(
+                    `<td><a href="/windows/error/%s">%s</a></td>`, sym.key, sym.name);
+                buffer.writef(
+                    `<td><a href="/windows/code/%s">%s</a></td>`, sym.origId, sym.origId);
+                buffer.writef(`<td>%s</td>`, sym.message);
+                buffer.put(`</tr>`);
+            }
+            buffer.put(`</tbody>`);
+            buffer.put(`<tfoot>`);
+            buffer.writef(`<tr><td colspan="3">%s %s</td></tr>`, count, plural(count,"entry","entries"));
+            buffer.put(`</tfoot>`);
+            buffer.put(`</table>`);
             
             prepareFooter(buffer);
             
