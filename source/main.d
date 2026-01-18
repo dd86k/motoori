@@ -236,45 +236,6 @@ int main(string[] args)
                 hresult_facility,
                 modules);
         })
-        // Windows error by code
-        .get("/windows/code/:code", (HTTPServerRequest req, HTTPServerResponse res)
-        {
-            string codeparam = req.params["code"];
-            
-            bool succ = void;
-            uint code = parseCode(codeparam, succ);
-            if (succ == false)
-                throw new HTTPStatusException(400);
-            
-            // Associated facilities
-            ushort nstatus_facility_id = ntstatusFacilityIDByCode(code);
-            WindowsFacility ntstatus_facility = ntstatusFacilityById(nstatus_facility_id);
-            if (ntstatus_facility.name == string.init)
-            {
-                ntstatus_facility.name = "Unknown";
-                ntstatus_facility.id   = nstatus_facility_id;
-            }
-            ushort hresult_facility_id = hresultFacilityIDByCode(code);
-            WindowsFacility hresult_facility  = hresultFacilityById(hresult_facility_id);
-            if (hresult_facility.name == string.init)
-            {
-                hresult_facility.name = "Unknown";
-                hresult_facility.id   = hresult_facility_id;
-            }
-            
-            // Associated headers and modules
-            SearchWindowsHeaderResult[] results_headers = searchWindowsHeadersByCode(code);
-            SearchWindowsModuleResult[] results_modules = searchWindowsModulesByCode(code);
-            
-            char[32] formalbuf = void;
-            string formal = cast(string)sformat(formalbuf[], "0x%08x", code);
-            
-            PageSettings page = PageSettings(ActiveTab.windows, formal~" | OEDB");
-            res.render!("windows-code.dt", page,
-                ntstatus_facility, hresult_facility,
-                results_modules,   results_headers,
-                formal);
-        })
     ;
     */
     
@@ -997,7 +958,7 @@ int main(string[] args)
             scope OutBuffer buffer = new OutBuffer;
             buffer.reserve(8 * 1024);
             
-            prepareHeader(buffer, format("%s | OEDB", mod.name), ActiveTab.none);
+            prepareHeader(buffer, format("%s | OEDB", mod.name), ActiveTab.windows);
             
             buffer.writef(`<p><a href="/windows/">Windows</a> / <a href="/windows/modules">Modules</a> / %s</p>`, mod.name);
             buffer.writef(`<h1>%s</h1>`, mod.name);
@@ -1031,6 +992,104 @@ int main(string[] args)
             buffer.writef(`<tr><td colspan="2">%s %s</td></tr>`, count, plural(count,"entry","entries"));
             buffer.put(`</tfoot>`);
             buffer.put(`</table>`);
+            
+            prepareFooter(buffer);
+            
+            req.reply(200, buffer.toBytes(), "text/html");
+            return REQUEST_OK;
+        })
+        .addRoute("GET", "/windows/code/:code", (ref HTTPRequest req)
+        {
+            string *qcode = "code" in req.params;
+            if (qcode == null)
+                throw new HttpServerException(HTTPStatus.badRequest, HTTPMsg.badRequest, req);
+            
+            // Throws if input too big anyway
+            uint code = void;
+            if (parseCode(*qcode, code) == false)
+                throw new HttpServerException(HTTPStatus.badRequest, HTTPMsg.badRequest, req);
+            
+            // Associated facilities
+            ushort nstatus_facility_id = ntstatusFacilityIDByCode(code);
+            WindowsFacility ntstatus_facility = ntstatusFacilityById(nstatus_facility_id);
+            if (ntstatus_facility.name == string.init)
+            {
+                ntstatus_facility.name = "Unknown";
+                ntstatus_facility.id   = nstatus_facility_id;
+            }
+            ushort hresult_facility_id = hresultFacilityIDByCode(code);
+            WindowsFacility hresult_facility = hresultFacilityById(hresult_facility_id);
+            if (hresult_facility.name == string.init)
+            {
+                hresult_facility.name = "Unknown";
+                hresult_facility.id   = hresult_facility_id;
+            }
+            
+            // Associated headers and modules
+            // TODO: Could be iterated instead to bypass allocation
+            SearchWindowsHeaderResult[] results_headers = searchWindowsHeadersByCode(code);
+            SearchWindowsModuleResult[] results_modules = searchWindowsModulesByCode(code);
+            
+            // "Proper" code as if MS would print it I guess
+            char[32] formalbuf = void;
+            string formal = cast(string)sformat(formalbuf[], "0x%08x", code);
+            
+            scope OutBuffer buffer = new OutBuffer;
+            buffer.reserve(8 * 1024);
+            
+            prepareHeader(buffer, format("%s | OEDB", formal), ActiveTab.windows);
+            
+            buffer.writef(`<p><a href="/windows/">Windows</a> / Code / %s</p>`, formal);
+            buffer.writef(`<h1>%s</h1>`, formal);
+            buffer.writef(`<p>HRESULT Facility: %s %s</p>`, hresult_facility.name, hresult_facility.id);
+            buffer.writef(`<p>NTSTATUS Facility: %s %s</p>`, ntstatus_facility.name, ntstatus_facility.id);
+            
+            buffer.put(`<h2>Associated Modules</h2>`);
+            buffer.put(`<table>`);
+            buffer.put(`<thead><tr><th>Module</th><th>Description</th></tr></thead>`);
+            buffer.put(`<tbody>`);
+            size_t count_mods;
+            foreach (ref result; results_modules)
+            {
+                ++count_mods;
+                
+                buffer.writef(
+                    `<tr>`~
+                    `<td><a href="/windows/module/%s">%s</a></td>`~
+                    `<td>%s</td>`~
+                    `</tr>`,
+                    result.module_.name, result.module_.name, result.error.message
+                );
+            }
+            buffer.put(`</tbody><tfoot>`);
+            buffer.writef(`<tr><td colspan="2">%s %s</td></tr>`, count_mods, plural(count_mods,"entry","entries"));
+            buffer.put(`</tfoot></table>`);
+            
+            buffer.put(`<h2>Associated Headers</h2>`);
+            buffer.put(`<table>`);
+            buffer.put(`<thead><tr><th>Header</th><th>Symbolic</th><th>Description</th></tr></thead>`);
+            buffer.put(`<tbody>`);
+            size_t count_headers;
+            foreach (ref result; results_headers)
+            {
+                ++count_headers;
+                
+                with (result)
+                buffer.writef(
+                    `<tr>`~
+                    `<td><a href="/windows/header/%s">%s</a></td>`~
+                    `<td id="%s"><a href="/windows/error/%s">%s</a></td>`~
+                    `<td>%s</td>`~
+                    `</tr>`,
+                    header.key, header.name,
+                    error.name, error.key, error.name,
+                    error.message
+                );
+            }
+            buffer.put(`</tbody><tfoot>`);
+            buffer.writef(`<tr><td colspan="3">%s %s</td></tr>`,
+                count_headers, plural(count_headers,"entry","entries"));
+            buffer.put(`</tfoot></table>`);
             
             prepareFooter(buffer);
             
