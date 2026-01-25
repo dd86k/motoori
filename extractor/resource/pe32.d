@@ -8,7 +8,7 @@ import std.encoding : transcode;
 import core.sys.windows.winbase : ExpandEnvironmentStringsA;
 import core.stdc.inttypes : uint8_t, uint16_t, uint32_t, uint64_t;
 
-version = Trace;
+//version = Trace;
 
 //TODO: Consider including resource version (typically 4.0)
 //      into db

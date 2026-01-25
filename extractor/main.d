@@ -17,7 +17,7 @@ void locateMUIFile(string opt, string val)
         string mui = locatemui(val);
         if (mui == null) // retry with suffix
             mui = locatemui(val~".dll");
-        writeln(val, ": ", mui ? mui : "Not found");
+        writefln("%20s: %s", val, mui ? mui : "Not found");
         exit(mui ? 2 : 0);
     }
     else
@@ -31,16 +31,48 @@ void checkMUIFiles()
     {
         foreach (mod; modules)
         {
-            string modname = mod.name;
-            string mui = locatemui(modname);
+            string mui = locatemui(mod.name);
             if (mui == null) // retry with suffix
-                mui = locatemui(modname~".dll");
-            writeln(modname, ":\t", mui ? mui : "Not found");
+                mui = locatemui(mod.name~".dll");
+            writefln("%20s: %s", mod.name, mui ? mui : "Not found");
         }
         exit(0);
     }
     else
         throw new GetOptException("Option --list-mui is only available on Windows");
+}
+
+void checkCode(string _, string val)
+{
+    version (Windows)
+    {
+        import extract.utils : parseCode;
+        import extract.resource.pe32 : ErrorMessage, loadmuimsgs;
+        uint code = void;
+        if (parseCode(val, code) == false)
+            throw new Exception("Not an error code");
+        
+        foreach (mod; modules)
+        {
+            string mui = locatemui(mod.name);
+            try
+            {
+                scope ErrorMessage[] msgs = loadmuimsgs(mui);
+                foreach (msg; msgs)
+                {
+                    if (msg.id == code)
+                    {
+                        writeln(mui);
+                        writeln('\t', msg);
+                    }
+                }
+            }
+            catch (Exception) {}
+        }
+        exit(0);
+    }
+    else
+        throw new GetOptException("Option --code= is only available on Windows");
 }
 
 void cliPlatformInfo()
@@ -97,6 +129,7 @@ void main(string[] args)
         // Windows MUI settings
         "locate-mui",   "Windows: Locate MUI module given name", &locateMUIFile,
         "list-mui",     "Windows: Check availability of all MUI modules", &checkMUIFiles,
+        "code",         "Windows: Check if this code exists in MUIs", &checkCode,
         //"print-mui",  "Windows: Only print strings of MUI module", &strings,
         //"headerdesc", "Windows: Write header descriptions", &headerDesc,
         );
