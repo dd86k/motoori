@@ -1177,10 +1177,14 @@ int main(string[] args)
     
     writeln("Listening on port ", port);
     
+    // NOTE: looping readln
+    //       This caused a significant issue with OpenRC's start-stop-daemon.1
+    //       when using command_background=true.
+    //       This doesn't support "background" stuff. Instead, emulate being busy.
+    import core.thread : Thread;
+    import core.time : dur;
     while (true)
-    {
-        readln;
-    }
+        Thread.sleep(dur!"seconds"(60));
     
     return 0;
 }
