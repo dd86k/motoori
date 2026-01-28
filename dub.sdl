@@ -15,8 +15,7 @@ subPackage {
 }
 
 # Server code
-dependency "ddhttpd" repository="git+https://github.com/dd86k/ddhttpd.git" version="c41b6913b2b3147cbda7f918dbbcad00741f69d0"
-
+dependency "ddhttpd" repository="git+https://github.com/dd86k/ddhttpd.git" version="bc6ae3eda994334da4e868c5630ca99f6d9f2606"
 
 buildType "debugv" {
 	buildOptions "debugMode"
