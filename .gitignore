@@ -37,3 +37,7 @@ data/
 # Personal
 perso/
 legacydata/
+
+# Claude
+.claude/
+CLAUDE.md

@@ -5,7 +5,6 @@ import std.format;
 import std.stdio;
 import std.getopt;
 import std.string : toLower;
-import std.outbuffer;
 import motoori, database;
 import extra.windows;
 
@@ -25,7 +24,7 @@ struct ErrorModule
     const(char)[] symbolic;
 }
 
-void prepareHeader(OutBuffer buffer, string title, ActiveTab tab, string search_query = null)
+void prepareHeader(ref HTTPReply buffer, string title, ActiveTab tab, string search_query = null)
 {
     // NOTE: Could have done a Pug/Diet template converter (by line) but lazy
     buffer.put(`<!DOCTYPE html>`);
@@ -86,7 +85,7 @@ void prepareHeader(OutBuffer buffer, string title, ActiveTab tab, string search_
     
     buffer.put(`<div class="content">`);
 }
-void prepareFooter(OutBuffer buffer, string build_date = __DATE__)
+void prepareFooter(ref HTTPReply buffer, string build_date = __DATE__)
 {
     buffer.put(`</div>`); // class="content"
     
@@ -107,7 +106,7 @@ void prepareFooter(OutBuffer buffer, string build_date = __DATE__)
     buffer.put(`</body>`);
     buffer.put(`</html>`);
 }
-void pageCrt(OutBuffer buffer, ref DatabaseCrt crt)
+void pageCrt(ref HTTPReply buffer, ref DatabaseCrt crt)
 {
     buffer.writef(`<p><a href="/crt/">C Runtimes</a> / %s</p>`, crt.name);
     buffer.writef(`<h1>%s</h1>`, crt.full);
@@ -215,8 +214,7 @@ int main(string[] args)
     HTTPServer http = new HTTPServer()
         .onError((ref HTTPRequest req, Exception ex)
         {
-            scope OutBuffer buffer = new OutBuffer;
-            buffer.reserve(4 * 1024);
+            HTTPReply buffer = HTTPReply.create(4 * 1024);
             
             prepareHeader(buffer, "OEDB", ActiveTab.none);
             
@@ -241,13 +239,12 @@ int main(string[] args)
             
             prepareFooter(buffer);
             
-            req.reply(200, buffer.toBytes(), "text/html");
+            req.reply(200, buffer, "text/html");
             return REQUEST_OK;
         })
         .addRoute("GET", "/", (ref HTTPRequest req)
         {
-            scope OutBuffer buffer = new OutBuffer;
-            buffer.reserve(4 * 1024);
+            HTTPReply buffer = HTTPReply.create(4 * 1024);
             
             DatabaseStatistics dbstats = databaseStatistics();
             
@@ -283,13 +280,12 @@ int main(string[] args)
             
             prepareFooter(buffer);
             
-            req.reply(200, buffer.toBytes(), "text/html");
+            req.reply(200, buffer, "text/html");
             return REQUEST_OK;
         })
         .addRoute("GET", "/about", (ref HTTPRequest req)
         {
-            scope OutBuffer buffer = new OutBuffer;
-            buffer.reserve(4 * 1024);
+            HTTPReply buffer = HTTPReply.create(4 * 1024);
             
             prepareHeader(buffer, "About | OEDB", ActiveTab.about);
             
@@ -325,7 +321,7 @@ int main(string[] args)
             
             prepareFooter(buffer);
             
-            req.reply(200, buffer.toBytes(), "text/html");
+            req.reply(200, buffer, "text/html");
             return REQUEST_OK;
         })
         //
@@ -333,8 +329,7 @@ int main(string[] args)
         //
         .addRoute("GET", "/crt/", (ref HTTPRequest req)
         {
-            scope OutBuffer buffer = new OutBuffer;
-            buffer.reserve(4 * 1024);
+            HTTPReply buffer = HTTPReply.create(4 * 1024);
             
             prepareHeader(buffer, "C Runtimes | OEDB", ActiveTab.crt);
             
@@ -355,13 +350,12 @@ int main(string[] args)
             
             prepareFooter(buffer);
             
-            req.reply(200, buffer.toBytes(), "text/html");
+            req.reply(200, buffer, "text/html");
             return REQUEST_OK;
         })
         .addRoute("GET", "/crt/msvc", (ref HTTPRequest req)
         {
-            scope OutBuffer buffer = new OutBuffer;
-            buffer.reserve(4 * 1024);
+            HTTPReply buffer = HTTPReply.create(4 * 1024);
             
             DatabaseCrt crt = databaseCrt("msvc"); // HACK
             
@@ -371,13 +365,12 @@ int main(string[] args)
             
             prepareFooter(buffer);
             
-            req.reply(200, buffer.toBytes(), "text/html");
+            req.reply(200, buffer, "text/html");
             return REQUEST_OK;
         })
         .addRoute("GET", "/crt/gnu", (ref HTTPRequest req)
         {
-            scope OutBuffer buffer = new OutBuffer;
-            buffer.reserve(4 * 1024);
+            HTTPReply buffer = HTTPReply.create(4 * 1024);
             
             DatabaseCrt crt = databaseCrt("glibc"); // HACK
             
@@ -387,13 +380,12 @@ int main(string[] args)
             
             prepareFooter(buffer);
             
-            req.reply(200, buffer.toBytes(), "text/html");
+            req.reply(200, buffer, "text/html");
             return REQUEST_OK;
         })
         .addRoute("GET", "/crt/musl", (ref HTTPRequest req)
         {
-            scope OutBuffer buffer = new OutBuffer;
-            buffer.reserve(4 * 1024);
+            HTTPReply buffer = HTTPReply.create(4 * 1024);
             
             DatabaseCrt crt = databaseCrt("musl"); // HACK
             
@@ -403,7 +395,7 @@ int main(string[] args)
             
             prepareFooter(buffer);
             
-            req.reply(200, buffer.toBytes(), "text/html");
+            req.reply(200, buffer, "text/html");
             return REQUEST_OK;
         })
         //
@@ -411,8 +403,7 @@ int main(string[] args)
         //
         .addRoute("GET", "/windows/", (ref HTTPRequest req)
         {
-            scope OutBuffer buffer = new OutBuffer;
-            buffer.reserve(4 * 1024);
+            HTTPReply buffer = HTTPReply.create(4 * 1024);
             
             prepareHeader(buffer, "Windows | OEDB", ActiveTab.windows);
             
@@ -448,13 +439,12 @@ int main(string[] args)
             
             prepareFooter(buffer);
             
-            req.reply(200, buffer.toBytes(), "text/html");
+            req.reply(200, buffer, "text/html");
             return REQUEST_OK;
         })
         .addRoute("GET", "/windows/error-types", (ref HTTPRequest req)
         {
-            scope OutBuffer buffer = new OutBuffer;
-            buffer.reserve(16 * 1024);
+            HTTPReply buffer = HTTPReply.create(16 * 1024);
             
             prepareHeader(buffer, "Windows Error Types | OEDB", ActiveTab.windows);
             
@@ -661,13 +651,12 @@ int main(string[] args)
             
             prepareFooter(buffer);
             
-            req.reply(200, buffer.toBytes(), "text/html");
+            req.reply(200, buffer, "text/html");
             return REQUEST_OK;
         })
         .addRoute("GET", "/windows/modules", (ref HTTPRequest req)
         {
-            scope OutBuffer buffer = new OutBuffer;
-            buffer.reserve(32 * 1024);
+            HTTPReply buffer = HTTPReply.create(32 * 1024);
             
             prepareHeader(buffer, "Windows Modules | OEDB", ActiveTab.windows);
             
@@ -706,13 +695,12 @@ int main(string[] args)
             
             prepareFooter(buffer);
             
-            req.reply(200, buffer.toBytes(), "text/html");
+            req.reply(200, buffer, "text/html");
             return REQUEST_OK;
         })
         .addRoute("GET", "/windows/headers", (ref HTTPRequest req)
         {
-            scope OutBuffer buffer = new OutBuffer;
-            buffer.reserve(32 * 1024);
+            HTTPReply buffer = HTTPReply.create(32 * 1024);
             
             prepareHeader(buffer, "Windows Headers | OEDB", ActiveTab.windows);
             
@@ -754,7 +742,7 @@ int main(string[] args)
             
             prepareFooter(buffer);
             
-            req.reply(200, buffer.toBytes(), "text/html");
+            req.reply(200, buffer, "text/html");
             return REQUEST_OK;
         })
         .addRoute("GET", "/search", (ref HTTPRequest req)
@@ -772,8 +760,7 @@ int main(string[] args)
             SearchResult[] results = search(query);
             sw.stop();
             
-            scope OutBuffer buffer = new OutBuffer;
-            buffer.reserve(32 * 1024);
+            HTTPReply buffer = HTTPReply.create(32 * 1024);
             
             prepareHeader(buffer, "Search | OEDB", ActiveTab.none, escaped);
             
@@ -836,7 +823,7 @@ int main(string[] args)
             
             prepareFooter(buffer);
             
-            req.reply(200, buffer.toBytes(), "text/html");
+            req.reply(200, buffer, "text/html");
             return REQUEST_OK;
         })
         .addRoute("GET", "/windows/header/:header", (ref HTTPRequest req)
@@ -849,8 +836,7 @@ int main(string[] args)
             if (winheader.name == string.init)
                 throw new HttpServerException(HTTPStatus.notFound, HTTPMsg.notFound, req);
             
-            scope OutBuffer buffer = new OutBuffer;
-            buffer.reserve(8 * 1024);
+            HTTPReply buffer = HTTPReply.create(8 * 1024);
             
             prepareHeader(buffer, format("%s | OEDB", winheader.name), ActiveTab.windows);
             
@@ -885,7 +871,7 @@ int main(string[] args)
             
             prepareFooter(buffer);
             
-            req.reply(200, buffer.toBytes(), "text/html");
+            req.reply(200, buffer, "text/html");
             return REQUEST_OK;
         })
         .addRoute("GET", "/windows/module/:module", (ref HTTPRequest req)
@@ -898,8 +884,7 @@ int main(string[] args)
             if (mod.name == string.init)
                 throw new HttpServerException(HTTPStatus.notFound, HTTPMsg.notFound, req);
             
-            scope OutBuffer buffer = new OutBuffer;
-            buffer.reserve(8 * 1024);
+            HTTPReply buffer = HTTPReply.create(8 * 1024);
             
             prepareHeader(buffer, format("%s | OEDB", mod.name), ActiveTab.windows);
             
@@ -938,7 +923,7 @@ int main(string[] args)
             
             prepareFooter(buffer);
             
-            req.reply(200, buffer.toBytes(), "text/html");
+            req.reply(200, buffer, "text/html");
             return REQUEST_OK;
         })
         .addRoute("GET", "/windows/code/:code", (ref HTTPRequest req)
@@ -977,8 +962,7 @@ int main(string[] args)
             char[32] formalbuf = void;
             string formal = cast(string)sformat(formalbuf[], "0x%08x", code);
             
-            scope OutBuffer buffer = new OutBuffer;
-            buffer.reserve(8 * 1024);
+            HTTPReply buffer = HTTPReply.create(8 * 1024);
             
             prepareHeader(buffer, format("%s | OEDB", formal), ActiveTab.windows);
             
@@ -1036,7 +1020,7 @@ int main(string[] args)
             
             prepareFooter(buffer);
             
-            req.reply(200, buffer.toBytes(), "text/html");
+            req.reply(200, buffer, "text/html");
             return REQUEST_OK;
         })
         .addRoute("GET", "/windows/error/:symbol", (ref HTTPRequest req)
@@ -1071,8 +1055,7 @@ int main(string[] args)
             // Associated modules
             SearchWindowsModuleResult[] modules = searchWindowsModulesByCode(winsymbol.id);
             
-            scope OutBuffer buffer = new OutBuffer;
-            buffer.reserve(8 * 1024);
+            HTTPReply buffer = HTTPReply.create(8 * 1024);
             
             prepareHeader(buffer, format("%s | OEDB", winsymbol.name), ActiveTab.windows);
             
@@ -1129,7 +1112,7 @@ int main(string[] args)
             
             prepareFooter(buffer);
             
-            req.reply(200, buffer.toBytes(), "text/html");
+            req.reply(200, buffer, "text/html");
             return REQUEST_OK;
         })
         //
@@ -1138,37 +1121,37 @@ int main(string[] args)
         //
         .addRoute("GET", "/favicon.png", (ref HTTPRequest req)
         {
-            req.reply(200, buffer_favicon_png, "image/png");
+            req.reply(200, HTTPReply.staticBuffer(buffer_favicon_png), "image/png");
             return REQUEST_OK;
         })
         .addRoute("GET", "/theme.js", (ref HTTPRequest req)
         {
-            req.reply(200, buffer_theme_js, "text/javascript");
+            req.reply(200, HTTPReply.staticBuffer(buffer_theme_js), "text/javascript");
             return REQUEST_OK;
         })
         .addRoute("GET", "/main.css", (ref HTTPRequest req)
         {
-            req.reply(200, buffer_main_css, "text/css");
+            req.reply(200, HTTPReply.staticBuffer(buffer_main_css), "text/css");
             return REQUEST_OK;
         })
         .addRoute("GET", "/chota.min.css", (ref HTTPRequest req)
         {
-            req.reply(200, buffer_chota_min_css, "text/css");
+            req.reply(200, HTTPReply.staticBuffer(buffer_chota_min_css), "text/css");
             return REQUEST_OK;
         })
         .addRoute("GET", "/humans.txt", (ref HTTPRequest req)
         {
-            req.reply(200, buffer_humans_txt, "text/plain");
+            req.reply(200, HTTPReply.staticBuffer(buffer_humans_txt), "text/plain");
             return REQUEST_OK;
         })
         .addRoute("GET", "/robots.txt", (ref HTTPRequest req)
         {
-            req.reply(200, buffer_robots_txt, "text/plain");
+            req.reply(200, HTTPReply.staticBuffer(buffer_robots_txt), "text/plain");
             return REQUEST_OK;
         })
         .addRoute("GET", "/noscript.css", (ref HTTPRequest req)
         {
-            req.reply(200, buffer_noscript_css, "text/plain");
+            req.reply(200, HTTPReply.staticBuffer(buffer_noscript_css), "text/plain");
             return REQUEST_OK;
         })
     ;
