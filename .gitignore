@@ -13,6 +13,7 @@ motoori*-test-*
 dub.selections.json
 *.exe
 *.dll
+/integration-*
 
 # Libs and miscs
 *.pdb

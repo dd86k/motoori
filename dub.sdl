@@ -15,7 +15,16 @@ subPackage {
 }
 
 # Server code
-dependency "ddhttpd" repository="git+https://github.com/dd86k/ddhttpd.git" version="5fd8d0d02e2d187684a6609dbc7d1e44bb087450"
+dependency "ddhttpd" repository="git+https://github.com/dd86k/ddhttpd.git" version="6eb787275b2494b41872e7eb7a28304e924104af"
+
+subPackage {
+	name "integration-memleak"
+	targetName "integration-memleak"
+	description "Integration test for memory leak detection"
+	targetType "executable"
+	sourcePaths "integration"
+	importPaths "integration"
+}
 
 buildType "debugv" {
 	buildOptions "debugMode"
