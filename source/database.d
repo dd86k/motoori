@@ -354,6 +354,8 @@ struct SearchResult
     const(char)[] pre;      /// pre-needle snippet
     const(char)[] needle;   /// needle
     const(char)[] post;     /// post-needle snippet
+    bool preTruncated;      /// whether pre snippet was truncated
+    bool postTruncated;     /// whether post snippet was truncated
 }
 
 /// How many characters to snip before and after needle
@@ -365,7 +367,10 @@ private enum SEARCH_LIMIT = 50;
 private const(char)[] preSnip(const(char)[] text, const(char)[] input, ptrdiff_t i) {
     if (i == 0)
         return "";
-    return i >= SNIPPET_PADDING ? "..." ~ text[i - SNIPPET_PADDING..i] : text[0..i];
+    return i >= SNIPPET_PADDING ? text[i - SNIPPET_PADDING..i] : text[0..i];
+}
+private bool preSnipTruncated(const(char)[] text, const(char)[] input, ptrdiff_t i) {
+    return i >= SNIPPET_PADDING;
 }
 private const(char)[] needleSnip(const(char)[] text, const(char)[] input, ptrdiff_t i) {
     return text[i..i + input.length];
@@ -375,7 +380,12 @@ private const(char)[] postSnip(const(char)[] text, const(char)[] input, ptrdiff_
         return "";
     i += input.length;
     size_t i2 = i + SNIPPET_PADDING;
-    return i2 < text.length ? text[i..i2] ~ "..." : text[i..$];
+    return i2 < text.length ? text[i..i2] : text[i..$];
+}
+private bool postSnipTruncated(const(char)[] text, const(char)[] input, ptrdiff_t i) {
+    if (i >= text.length)
+        return false;
+    return (i + input.length + SNIPPET_PADDING) < text.length;
 }
 
 SearchResult[] search(string input)
@@ -384,6 +394,7 @@ SearchResult[] search(string input)
     bool iscode = parseCode(input, code);
     
     SearchResult[] results;
+    results.reserve(SEARCH_LIMIT);
     
     if (input.length == 0)
         return results;
@@ -418,15 +429,18 @@ SearchResult[] search(string input)
             const(char)[] msgneedle;
             const(char)[] msgpost;
             
+            bool pretrunc, posttrunc;
             if (iscode == false)
             {
-                msgpre = preSnip(refdesc, input, i);
-                msgneedle = needleSnip(refdesc, input, i);
-                msgpost = postSnip(refdesc, input, i);
+                msgpre      = preSnip(refdesc, input, i);
+                pretrunc    = preSnipTruncated(refdesc, input, i);
+                msgneedle   = needleSnip(refdesc, input, i);
+                msgpost     = postSnip(refdesc, input, i);
+                posttrunc   = postSnipTruncated(refdesc, input, i);
             }
             
             results ~= SearchResult(type, reforigid, name,
-                 msgpre, msgneedle, msgpost);
+                 msgpre, msgneedle, msgpost, pretrunc, posttrunc);
         }
         
         return results.length >= SEARCH_LIMIT;
@@ -475,16 +489,14 @@ struct SearchWindowsModuleResult
 SearchWindowsModuleResult[] searchWindowsModulesByCode(uint errcode)
 {
     SearchWindowsModuleResult[] results;
+    results.reserve(16);
     foreach (ref module_; data_windows_modules)
     {
         foreach (ref errmsg; module_.messages)
         {
             if (errcode == errmsg.id)
             {
-                SearchWindowsModuleResult result;
-                result.module_ = module_;
-                result.error   = errmsg;
-                results ~= result;
+                results ~= SearchWindowsModuleResult(module_, errmsg);
             }
         }
     }
@@ -501,16 +513,14 @@ struct SearchWindowsHeaderResult
 SearchWindowsHeaderResult[] searchWindowsHeadersByCode(uint errcode)
 {
     SearchWindowsHeaderResult[] results;
+    results.reserve(16);
     foreach (ref header; data_windows_headers)
     {
         foreach (ref sym; header.symbolics)
         {
             if (errcode == sym.id)
             {
-                SearchWindowsHeaderResult result;
-                result.header = header;
-                result.error  = sym;
-                results ~= result;
+                results ~= SearchWindowsHeaderResult(header, sym);
             }
         }
     }

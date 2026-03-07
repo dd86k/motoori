@@ -42,6 +42,29 @@ unittest
     assert(parseCode("Hello", code) == false);
 }
 
+/// ASCII-only toLower into a caller-provided buffer. Returns a slice of buf.
+char[] toLowerBuf(char[] buf, const(char)[] input)
+{
+    if (input.length > buf.length)
+        return null;
+    foreach (idx, c; input)
+        buf[idx] = (c >= 'A' && c <= 'Z') ? cast(char)(c + 32) : c;
+    return buf[0 .. input.length];
+}
+unittest
+{
+    char[32] buf;
+    assert(toLowerBuf(buf, "Hello") == "hello");
+    assert(toLowerBuf(buf, "ALLCAPS") == "allcaps");
+    assert(toLowerBuf(buf, "already") == "already");
+    assert(toLowerBuf(buf, "MiXeD_CaSe123") == "mixed_case123");
+    assert(toLowerBuf(buf, "") == "");
+
+    char[4] tiny;
+    assert(toLowerBuf(tiny, "toolong") is null);
+    assert(toLowerBuf(tiny, "FOUR") == "four");
+}
+
 pragma(inline, true)
 string plural(size_t count, string single, string multi)
 {

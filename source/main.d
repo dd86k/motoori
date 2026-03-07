@@ -9,6 +9,7 @@ import motoori, database;
 import extra.windows;
 
 import ddhttpd;
+import core.memory : GC;
 
 static import std.file;
 alias readAll = std.file.read;
@@ -773,9 +774,9 @@ int main(string[] args)
                 string url_code = void;
                 string url_title = void;
                 string title_type = void;
-                
+
                 buffer.writef(`<p>%s results - %s</p>`, results.length, sw.peek());
-                
+
                 foreach (result; results)
                 {
                     buffer.put(`<article class="result">`);
@@ -810,7 +811,15 @@ int main(string[] args)
                     
                     if (result.needle)
                     {
-                        buffer.writef(`<p>%s<u>%s</u>%s</p>`, result.pre, result.needle, result.post);
+                        buffer.put(`<p>`);
+                        if (result.preTruncated) buffer.put(`...`);
+                        buffer.put(result.pre);
+                        buffer.put(`<u>`);
+                        buffer.put(result.needle);
+                        buffer.put(`</u>`);
+                        buffer.put(result.post);
+                        if (result.postTruncated) buffer.put(`...`);
+                        buffer.put(`</p>`);
                     }
                     
                     buffer.put(`</article>`);
@@ -822,8 +831,9 @@ int main(string[] args)
             }
             
             prepareFooter(buffer);
-            
+
             req.reply(200, buffer, "text/html");
+            GC.collect();
             return REQUEST_OK;
         })
         .addRoute("GET", "/windows/header/:header", (ref HTTPRequest req)
@@ -838,7 +848,8 @@ int main(string[] args)
             
             HTTPReply buffer = HTTPReply.create(8 * 1024);
             
-            prepareHeader(buffer, format("%s | OEDB", winheader.name), ActiveTab.windows);
+            char[256] titlebuf;
+            prepareHeader(buffer, cast(string)sformat(titlebuf, "%s | OEDB", winheader.name), ActiveTab.windows);
             
             buffer.writef(
                 `<p><a href="/windows/">Windows</a> / <a href="/windows/headers">Headers</a> / %s</p>`, winheader.key);
@@ -886,7 +897,8 @@ int main(string[] args)
             
             HTTPReply buffer = HTTPReply.create(8 * 1024);
             
-            prepareHeader(buffer, format("%s | OEDB", mod.name), ActiveTab.windows);
+            char[256] titlebuf;
+            prepareHeader(buffer, cast(string)sformat(titlebuf, "%s | OEDB", mod.name), ActiveTab.windows);
             
             buffer.writef(`<p><a href="/windows/">Windows</a> / <a href="/windows/modules">Modules</a> / %s</p>`, mod.name);
             buffer.writef(`<h1>%s</h1>`, mod.name);
@@ -954,7 +966,6 @@ int main(string[] args)
             }
             
             // Associated headers and modules
-            // TODO: Could be iterated instead to bypass allocation
             SearchWindowsHeaderResult[] results_headers = searchWindowsHeadersByCode(code);
             SearchWindowsModuleResult[] results_modules = searchWindowsModulesByCode(code);
             
@@ -964,7 +975,8 @@ int main(string[] args)
             
             HTTPReply buffer = HTTPReply.create(8 * 1024);
             
-            prepareHeader(buffer, format("%s | OEDB", formal), ActiveTab.windows);
+            char[64] titlebuf;
+            prepareHeader(buffer, cast(string)sformat(titlebuf, "%s | OEDB", formal), ActiveTab.windows);
             
             buffer.writef(`<p><a href="/windows/">Windows</a> / Code / %s</p>`, formal);
             buffer.writef(`<h1>%s</h1>`, formal);
@@ -979,7 +991,7 @@ int main(string[] args)
             foreach (ref result; results_modules)
             {
                 ++count_mods;
-                
+
                 buffer.writef(
                     `<tr>`~
                     `<td><a href="/windows/module/%s">%s</a></td>`~
@@ -991,7 +1003,7 @@ int main(string[] args)
             buffer.put(`</tbody><tfoot>`);
             buffer.writef(`<tr><td colspan="2">%s %s</td></tr>`, count_mods, plural(count_mods,"entry","entries"));
             buffer.put(`</tfoot></table>`);
-            
+
             buffer.put(`<h2>Associated Headers</h2>`);
             buffer.put(`<table>`);
             buffer.put(`<thead><tr><th>Header</th><th>Symbolic</th><th>Description</th></tr></thead>`);
@@ -1019,8 +1031,9 @@ int main(string[] args)
             buffer.put(`</tfoot></table>`);
             
             prepareFooter(buffer);
-            
+
             req.reply(200, buffer, "text/html");
+            GC.collect();
             return REQUEST_OK;
         })
         .addRoute("GET", "/windows/error/:symbol", (ref HTTPRequest req)
@@ -1029,8 +1042,11 @@ int main(string[] args)
             if (qsymbol.length == 0)
                 throw new HttpServerException(HTTPStatus.badRequest, HTTPMsg.badRequest, req);
             
-            string symbolname = toLower(qsymbol);
-            
+            char[256] symbolbuf = void;
+            string symbolname = cast(string)toLowerBuf(symbolbuf, qsymbol);
+            if (symbolname is null)
+                throw new HttpServerException(HTTPStatus.badRequest, HTTPMsg.badRequest, req);
+
             WindowsHeader winheader = void;
             WindowsSymbolic winsymbol = databaseWindowsSymbolicByName(symbolname, winheader);
             if (winsymbol.name == string.init)
@@ -1057,7 +1073,8 @@ int main(string[] args)
             
             HTTPReply buffer = HTTPReply.create(8 * 1024);
             
-            prepareHeader(buffer, format("%s | OEDB", winsymbol.name), ActiveTab.windows);
+            char[256] titlebuf;
+            prepareHeader(buffer, cast(string)sformat(titlebuf[], "%s | OEDB", winsymbol.name), ActiveTab.windows);
             
             buffer.writef(
                 `<p>`~
@@ -1111,8 +1128,9 @@ int main(string[] args)
             }
             
             prepareFooter(buffer);
-            
+
             req.reply(200, buffer, "text/html");
+            GC.collect();
             return REQUEST_OK;
         })
         //

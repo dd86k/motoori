@@ -15,7 +15,7 @@ subPackage {
 }
 
 # Server code
-dependency "ddhttpd" repository="git+https://github.com/dd86k/ddhttpd.git" version="6eb787275b2494b41872e7eb7a28304e924104af"
+dependency "ddhttpd" repository="git+https://github.com/dd86k/ddhttpd.git" version="16abbaf3084dc28e718a1bfb1ed8451e5bf65e72"
 
 subPackage {
 	name "integration-memleak"
