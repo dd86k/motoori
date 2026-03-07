@@ -1050,7 +1050,7 @@ int main(string[] args)
             WindowsHeader winheader = void;
             WindowsSymbolic winsymbol = databaseWindowsSymbolicByName(symbolname, winheader);
             if (winsymbol.name == string.init)
-                throw new HttpServerException(HTTPStatus.notFound, HTTPMsg.notFound, req);;
+                throw new HttpServerException(HTTPStatus.notFound, HTTPMsg.notFound, req);
             
             // Associated facilities
             ushort nstatus_facility_id = ntstatusFacilityIDByCode(winsymbol.id);
@@ -1186,6 +1186,4 @@ int main(string[] args)
     import core.time : dur;
     while (true)
         Thread.sleep(dur!"seconds"(60));
-    
-    return 0;
 }
