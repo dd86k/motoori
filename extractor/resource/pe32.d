@@ -463,9 +463,9 @@ void muiParseData(ref MUIEnv mui, PE_IMAGE_RESOURCE_DATA_ENTRY* data)
         PE_IMAGE_RESOURCE_STRING* str =
             cast(PE_IMAGE_RESOURCE_STRING*)(cast(ubyte*) base + (block.RVA));
 
-        for (uint code = block.RangeLow; code <= block.RangeHigh; ++code)
+        Ltype: for (uint code = block.RangeLow; code <= block.RangeHigh; ++code)
         {
-            final switch (str.type)
+            switch (str.type)
             {
             case 0: // ASCII
                 uint asize = str.size - 4;
@@ -501,6 +501,9 @@ void muiParseData(ref MUIEnv mui, PE_IMAGE_RESOURCE_DATA_ENTRY* data)
 
                 mui.messages ~= ErrorMessage(code, b);
                 break;
+            default:
+                stderr.writeln("UNKNOWN MUI IMG RES STRING TYPE: ", str.type);
+                continue Ltype;
             }
 
             str = cast(PE_IMAGE_RESOURCE_STRING*)((cast(ubyte*) str) + str.size);

@@ -10,7 +10,7 @@ import extract.utils;
 private:
 
 // Locate a single MUI
-void locateMUIFile(string opt, string val)
+void locateMUIFile(string val)
 {
     version (Windows)
     {
@@ -42,7 +42,7 @@ void checkMUIFiles()
         throw new GetOptException("Option --list-mui is only available on Windows");
 }
 
-void checkCode(string _, string val)
+void checkCode(string val, bool all)
 {
     version (Windows)
     {
@@ -52,9 +52,19 @@ void checkCode(string _, string val)
         if (parseCode(val, code) == false)
             throw new Exception("Not an error code");
         
-        foreach (mod; modules)
+        string[] muis;
+        if (all)
+            muis = fetchallmui();
+        else
+            foreach (mod; modules)
+            {
+                string mui = locatemui(mod.name);
+                if (mui)
+                    muis ~= mui;
+            }
+
+        foreach (mui; muis)
         {
-            string mui = locatemui(mod.name);
             try
             {
                 scope ErrorMessage[] msgs = loadmuimsgs(mui);
@@ -100,6 +110,10 @@ void main(string[] args)
         GEN_ARCHIVE = 256,
         GEN_ALL = GEN_CRT | GEN_WIN_HDR | GEN_WIN_MOD | GEN_ARCHIVE,
     }
+    string olocatemui;
+    bool olistmuis;
+    string ocode;
+    bool oall;
     GetoptResult optres = void;
     try
     {
@@ -127,9 +141,10 @@ void main(string[] args)
         //"create-archive", "Generate the compressed archive", &"",
         // CRT settings
         // Windows MUI settings
-        "locate-mui",   "Windows: Locate MUI module given name", &locateMUIFile,
-        "list-mui",     "Windows: Check availability of all MUI modules", &checkMUIFiles,
-        "code",         "Windows: Check if this code exists in MUIs", &checkCode,
+        "locate-mui",   "Windows: Locate MUI module given name", &olocatemui,
+        "list-mui",     "Windows: Check availability of all MUI modules", &olistmuis,
+        "code",         "Windows: Check if this code exists in MUIs", &ocode,
+        "all-modules",  "Windows: Search for all MUIs and not the common ones", &oall,
         //"print-mui",  "Windows: Only print strings of MUI module", &strings,
         //"headerdesc", "Windows: Write header descriptions", &headerDesc,
         );
@@ -140,8 +155,9 @@ void main(string[] args)
         exit(1);
     }
     
-    if (optres.helpWanted || ogenflags == int.init)
+    if (optres.helpWanted)
     {
+    Lhelp:
         defaultGetoptPrinter(
             "extract: Error message extractor\n" ~
             "\n" ~
@@ -149,6 +165,27 @@ void main(string[] args)
             optres.options);
         exit(0);
     }
+    
+    if (olocatemui)
+    {
+        locateMUIFile(olocatemui);
+        exit(0);
+    }
+    
+    if (olistmuis)
+    {
+        checkMUIFiles();
+        exit(0);
+    }
+    
+    if (ocode)
+    {
+        checkCode(ocode, oall);
+        exit(0);
+    }
+    
+    if (ogenflags == int.init)
+        goto Lhelp;
     
     try
     {

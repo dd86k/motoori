@@ -294,6 +294,40 @@ string locatemui(string mod, string locale = "en-US")
     return null;
 }
 
+// Walking manually instead of SpanMode.breadth: %windir% holds directories that
+// deny listing (RtBackup, and so on) and one of them aborts the whole iteration.
+string[] fetchallmui(string locale = "en-US")
+{
+    import std.algorithm.searching : endsWith;
+    import std.file : dirEntries, DirEntry, SpanMode;
+    import std.path : baseName;
+
+    string[] muis;
+    string[] pending = [ environment["windir"] ];
+
+    while (pending.length)
+    {
+        string dir = pending[$ - 1];
+        pending = pending[0 .. $ - 1];
+
+        bool inlocale = baseName(dir) == locale;
+
+        try foreach (DirEntry entry; dirEntries(dir, SpanMode.shallow))
+        {
+            if (entry.isSymlink) // junctions would cycle us
+                continue;
+
+            if (entry.isDir)
+                pending ~= entry.name;
+            else if (inlocale && endsWith(entry.name, ".mui"))
+                muis ~= entry.name;
+        }
+        catch (Exception) {}
+    }
+
+    return muis;
+}
+
 // Process output of Err_6.4.5.exe /:outputtoCSV into a JSON
 private struct WinHeaderSym
 {
