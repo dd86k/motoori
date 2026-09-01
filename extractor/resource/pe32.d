@@ -400,6 +400,31 @@ T* ADDPTR(T)(T* baseptr, size_t size)
     return cast(T*)(cast(ubyte*) baseptr + size);
 }
 
+enum DUMP_LIMIT = 256;
+
+void hexdump(const(void)* data, size_t length)
+{
+    import std.ascii : isPrintable;
+
+    const(ubyte)[] buffer = (cast(const(ubyte)*) data)[0 .. length];
+
+    for (size_t i; i < buffer.length; i += 16)
+    {
+        size_t end = i + 16 > buffer.length ? buffer.length : i + 16;
+        const(ubyte)[] line = buffer[i .. end];
+
+        stderr.writef("%08x ", i);
+        foreach (ubyte b; line)
+            stderr.writef(" %02x", b);
+        foreach (size_t _; line.length .. 16)
+            stderr.write("   ");
+        stderr.write("  ");
+        foreach (ubyte b; line)
+            stderr.write(isPrintable(b) ? cast(char) b : '.');
+        stderr.writeln();
+    }
+}
+
 // MUI entries are typically named entries
 // The rest, such as STRING, MESSAGETABLE, and VERSION entries are ID'd
 // Level 1: Type
@@ -467,7 +492,7 @@ void muiParseData(ref MUIEnv mui, PE_IMAGE_RESOURCE_DATA_ENTRY* data)
         {
             switch (str.type)
             {
-            case 0: // ASCII
+            case 0, 2: // ANSI and UTF-8 (MESSAGE_RESOURCE_UTF8) are both byte-oriented
                 uint asize = str.size - 4;
                 char* aptr = (cast(char*)&str.type) + 2;
 
@@ -502,7 +527,8 @@ void muiParseData(ref MUIEnv mui, PE_IMAGE_RESOURCE_DATA_ENTRY* data)
                 mui.messages ~= ErrorMessage(code, b);
                 break;
             default:
-                stderr.writeln("UNKNOWN MUI IMG RES STRING TYPE: ", str.type);
+                stderr.writefln("UNKNOWN MUI IMG RES STRING TYPE: %u (size=%u)", str.type, str.size);
+                hexdump(str, str.size < DUMP_LIMIT ? str.size : DUMP_LIMIT);
                 continue Ltype;
             }
 
