@@ -199,6 +199,8 @@ struct WindowsRelease
     string key;   /// Short key, e.g. "11"
     string name;  /// Display name, e.g. "Windows 11"
     string build; /// Build the scan was taken on
+    size_t moduleCount;  /// Modules the scan found
+    size_t messageCount; /// Messages the scan found
 }
 
 struct WindowsModuleError
@@ -348,7 +350,24 @@ private void databaseSortWindowsModules()
 
     size_t modmsgcnt;
     foreach (ref WindowsModule mod; data_windows_modules)
+    {
         modmsgcnt += mod.messages.length;
+
+        foreach (ref WindowsRelease release; data_windows_releases)
+        {
+            if (mod.os & release.bit)
+                release.moduleCount++;
+        }
+
+        foreach (ref WindowsModuleError error; mod.messages)
+        {
+            foreach (ref WindowsRelease release; data_windows_releases)
+            {
+                if (error.os & release.bit)
+                    release.messageCount++;
+            }
+        }
+    }
 
     statistics.windowsOSCount = data_windows_releases.length;
     statistics.windowsModuleCount = data_windows_modules.length;

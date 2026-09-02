@@ -489,7 +489,7 @@ int main(string[] args)
         })
         .addRoute("GET", "/about", (ref HTTPRequest req)
         {
-            HTTPReply buffer = HTTPReply.create(4 * 1024);
+            HTTPReply buffer = HTTPReply.create(8 * 1024);
             
             prepareHeader(buffer, req, "About | OEDB",
                 "About OEDB: where the error entries come from, the libraries in use, "~
@@ -507,12 +507,56 @@ int main(string[] args)
                 `</p>`);
             buffer.put(`<p>This website was created by <a href="https://github.com/dd86k/">dd86k</a>.</p>`);
             buffer.writef(`<p>Running Motoori %s, compiled %s.</p>`, PROJECT_VERSION, __TIMESTAMP__);
+
+            DatabaseStatistics dbstats = databaseStatistics();
+
+            buffer.put(`<h2 id="database">Database</h2>`);
+            buffer.put(`<table class="table">`);
+            buffer.put(`<tbody>`);
+            buffer.writef(`<tr><td>Error messages</td><td>%d</td></tr>`, dbstats.totalMessageCount);
+            buffer.writef(`<tr><td>Windows headers</td><td>%d</td></tr>`, dbstats.windowsHeaderCount);
+            buffer.writef(`<tr><td>Windows symbolic names</td><td>%d</td></tr>`, dbstats.windowsSymbolicCount);
+            buffer.writef(`<tr><td>Windows modules</td><td>%d</td></tr>`, dbstats.windowsModuleCount);
+            buffer.writef(`<tr><td>Windows module messages</td><td>%d</td></tr>`, dbstats.windowsModuleErrorCount);
+            buffer.writef(`<tr><td>C runtime messages</td><td>%d</td></tr>`, dbstats.crtMessageCount);
+            buffer.put(`</tbody></table>`);
+            
+            // Module and message counts are per release, so they add up to more
+            // than the totals above: releases share the bulk of their modules
+            buffer.put(`<h3>Windows Releases</h3>`);
+            buffer.put(`<table class="table">`);
+            buffer.put(`<thead><tr><th>Tag</th><th>Release</th><th>Build</th>`~
+                `<th>Modules</th><th>Messages</th></tr></thead>`);
+            buffer.put(`<tbody>`);
+            foreach (ref WindowsRelease release; databaseWindowsReleases())
+            {
+                buffer.writef(
+                    `<tr><td><span class="tag is-small">%s</span></td><td>%s</td><td>%s</td>`~
+                    `<td>%d</td><td>%d</td></tr>`,
+                    release.key, release.name, release.build,
+                    release.moduleCount, release.messageCount);
+            }
+            buffer.put(`</tbody></table>`);
+            
+            buffer.put(`<h3>C Runtimes</h3>`);
+            buffer.put(`<table class="table">`);
+            buffer.put(`<thead><tr><th>Runtime</th><th>Architecture</th><th>Messages</th></tr></thead>`);
+            buffer.put(`<tbody>`);
+            foreach (ref DatabaseCrt crt; databaseListCrt())
+            {
+                buffer.writef(
+                    `<tr><td>%s C Runtime</td><td>%s</td><td>%d</td></tr>`,
+                    crt.full, crt.arch, crt.messages.length);
+            }
+            buffer.put(`</tbody></table>`);
+            
             buffer.put(`<h2>Sources</h2>`);
             buffer.put(
                 `<ul>`~
                 `<li><a href="https://www.microsoft.com/en-us/download/details.aspx?id=100432">`~
                     `Microsoft Error Lookup Tool version 6.4.5</a> for Windows header entries.</li>`~
-                `<li>Microsoft Windows 10 x64 for Windows module entries.</li>`~
+                `<li>Microsoft Windows x64 installs for Windows module entries, `~
+                    `per release as listed <a href="#database">above</a>.</li>`~
                 `<li>Microsoft Windows 11 x64 for MSVC entries.</li>`~
                 `<li>Ubuntu 24.04 AMD64 for Glibc entries.</li>`~
                 `<li>Alpine 3.18 AMD64 for Musl entries.</li>`~
