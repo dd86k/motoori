@@ -222,6 +222,25 @@ void pageCrt(ref HTTPReply buffer, ref DatabaseCrt crt)
     buffer.put(`</tbody></table>`);
 }
 
+/// Canonical page for a search query that can only mean one thing, null otherwise.
+///
+/// A code query never matches message text anyway, and its page decodes the
+/// value even when nothing in the database carries it, so it always wins over
+/// a result list. Symbolic names are not searched at all, only listed here.
+string searchExactURL(char[] buffer, string query)
+{
+    uint code = void;
+    if (parseCode(query, code))
+        return cast(string)sformat(buffer, "/windows/code/0x%08x", code);
+
+    WindowsHeader winheader = void;
+    WindowsSymbolic winsymbol = databaseWindowsSymbolicByName(query, winheader);
+    if (winsymbol.key == string.init)
+        return null;
+
+    return cast(string)sformat(buffer, "/windows/error/%s", winsymbol.key);
+}
+
 //
 // CLI
 //
@@ -863,6 +882,14 @@ int main(string[] args)
             string query = req.param("q");
             if (query == null)
                 throw new HttpServerException(400, "Bad Request", req);
+            
+            char[256] urlbuf = void;
+            string exact = searchExactURL(urlbuf, query);
+            if (exact)
+            {
+                req.redirect(302, exact);
+                return REQUEST_OK;
+            }
             
             string escaped = escapeHtml(query);
             
