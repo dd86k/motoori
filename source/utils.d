@@ -1,11 +1,26 @@
 module utils;
 
 import std.format : sformat;
-import ddhttpd : HTTPReply;
+import ddhttpd : HTTPReply, HTTPRequest;
+
+// Origin used to make canonical, og:url, and sitemap URLs absolute. Null means:
+// derive it from the request, which is all a local run or a single-host
+// deployment needs.
+__gshared string base_url;
 
 string sformatWindowsCode(char[] buffer, uint code)
 {
     return cast(string)sformat(buffer, "0x%x", code);
+}
+
+/// Zero-padded form, the one /windows/code/:code points its canonical at.
+///
+/// Listings display the short form but must link the padded one: the same code
+/// is reachable as 5, 0x5 and 0x00000005, and a link to any of the others lands
+/// on a page that immediately disclaims itself.
+string sformatWindowsCodeURL(char[] buffer, uint code)
+{
+    return cast(string)sformat(buffer, "0x%08x", code);
 }
 
 /// Parse an error code as hexadecimal ("0x1f") or decimal ("31").
@@ -253,4 +268,23 @@ unittest
     assert(validHost(`evil.example"><script>`) == false);
     assert(validHost("evil.example/path") == false);
     assert(validHost("evil example") == false);
+}
+
+/// Absolute origin for this request, or null when it can't be established.
+const(char)[] requestOrigin(ref HTTPRequest req, char[] buffer)
+{
+    if (base_url.length)
+        return base_url;
+
+    string host = req.header("Host");
+    if (validHost(host) == false)
+        return null;
+
+    // Behind a TLS-terminating proxy the connection itself is plain HTTP, so
+    // only the proxy can say what scheme the client actually used.
+    string scheme = req.header("X-Forwarded-Proto");
+    if (scheme != "https")
+        scheme = "http";
+
+    return sformat(buffer, "%s://%s", scheme, host);
 }

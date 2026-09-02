@@ -5,7 +5,7 @@ import std.format;
 import std.stdio;
 import std.getopt;
 import std.string : toLower, stripRight;
-import motoori, database;
+import motoori, database, sitemap;
 import extra.windows;
 
 import ddhttpd;
@@ -19,10 +19,6 @@ private:
 // Public resources are served from fixed URLs without a cache-busting suffix,
 // so the window has to stay short enough for an update to be picked up.
 enum const(char) *PUB_CACHE_CONTROL = "public, max-age=3600";
-
-// Origin used to make canonical and og:url absolute. Null means: derive it from
-// the request, which is all a local run or a single-host deployment needs.
-__gshared string base_url;
 
 /// Serve a public resource, under GET and HEAD.
 ///
@@ -60,6 +56,31 @@ HTTPServer addPubRoute(HTTPServer http, string path, const(char) *contentType)
         .addRoute("HEAD", path, handler);
 }
 
+/// Serve robots.txt, which unlike the rest of pub/ cannot be handed over
+/// verbatim: the Sitemap directive it carries has to be an absolute URL, and
+/// the origin is only known per request while --base-url is unset.
+HTTPServer addRobotsRoute(HTTPServer http)
+{
+    string content = cast(string)readAll("pub/robots.txt");
+
+    return http.addRoute("GET", "/robots.txt", (ref HTTPRequest req)
+    {
+        HTTPReply buffer = HTTPReply.create(content.length + 128);
+        buffer.put(content);
+        if (content.length && content[$-1] != '\n')
+            buffer.put("\n");
+
+        char[300] originbuf = void;
+        const(char)[] origin = requestOrigin(req, originbuf);
+        if (origin.length)
+            buffer.writef("Sitemap: %s/sitemap.xml\n", origin);
+
+        req.addHeader("Cache-Control", PUB_CACHE_CONTROL);
+        req.reply(200, buffer, "text/plain");
+        return REQUEST_OK;
+    });
+}
+
 // temporary until moved to database
 import std.algorithm.sorting : sort;
 struct ErrorModule
@@ -67,25 +88,6 @@ struct ErrorModule
     const(char)[] name;
     const(char)[] message;
     const(char)[] symbolic;
-}
-
-/// Absolute origin for this request, or null when it can't be established.
-const(char)[] requestOrigin(ref HTTPRequest req, char[] buffer)
-{
-    if (base_url.length)
-        return base_url;
-
-    string host = req.header("Host");
-    if (validHost(host) == false)
-        return null;
-
-    // Behind a TLS-terminating proxy the connection itself is plain HTTP, so
-    // only the proxy can say what scheme the client actually used.
-    string scheme = req.header("X-Forwarded-Proto");
-    if (scheme != "https")
-        scheme = "http";
-
-    return sformat(buffer, "%s://%s", scheme, host);
 }
 
 void prepareHeader(ref HTTPReply buffer, ref HTTPRequest req, string title,
@@ -1177,6 +1179,7 @@ int main(string[] args)
             buffer.put(`</thead>`);
             buffer.put(`<tbody>`);
             size_t count;
+            char[32] codebuf = void;
             foreach (sym; winheader.symbolics)
             {
                 ++count;
@@ -1184,7 +1187,8 @@ int main(string[] args)
                 buffer.writef(
                     `<td><a href="/windows/error/%s">%s</a></td>`, sym.key, sym.name);
                 buffer.writef(
-                    `<td><a href="/windows/code/%s">%s</a></td>`, sym.origId, sym.origId);
+                    `<td><a href="/windows/code/%s">%s</a></td>`,
+                    sformatWindowsCodeURL(codebuf, sym.id), sym.origId);
                 buffer.writef(`<td>%s</td>`, sym.message);
                 buffer.put(`</tr>`);
             }
@@ -1241,15 +1245,14 @@ int main(string[] args)
             {
                 ++count;
 
-                import utils : sformatWindowsCode;
-                char[32] buf = void;
-                // "shorten" the error code for URL and readability
-                string formal = sformatWindowsCode(buf, err.id);
+                char[32] buf = void, codebuf = void;
+                // "shorten" the error code for readability, but not for the link
                 buffer.writef(
                     `<tr>`~
                     `<td><a href="/windows/code/%s">%s</a></td>`~
                     `<td>`,
-                    formal, formal
+                    sformatWindowsCodeURL(codebuf, err.id),
+                    sformatWindowsCode(buf, err.id)
                 );
                 putWindowsOS(buffer, err.os);
                 buffer.writef(`</td><td>%s</td></tr>`, err.message);
@@ -1425,8 +1428,9 @@ int main(string[] args)
                 winheader.name, winheader.name, winsymbol.name
             );
             buffer.writef(`<h1>%s</h1>`, winsymbol.name);
+            char[32] codebuf = void;
             buffer.writef(`<p>Code: <a href="/windows/code/%s">%s</a> (%s)</p>`,
-                winsymbol.origId, winsymbol.origId, winsymbol.decId);
+                sformatWindowsCodeURL(codebuf, winsymbol.id), winsymbol.origId, winsymbol.decId);
             
             putWindowsCodeDecoding(buffer, winsymbol.id);
             
@@ -1452,13 +1456,14 @@ int main(string[] args)
 
                     with (mod)
                     {
+                        char[32] modcodebuf = void;
                         buffer.writef(
                             `<tr>`~
                             `<td><a href="/windows/module/%s">%s</a></td>`~
                             `<td><a href="/windows/code/%s">%s</a></td>`~
                             `<td>`,
                             module_.name, module_.name,
-                            error.origId, error.origId
+                            sformatWindowsCodeURL(modcodebuf, error.id), error.origId
                         );
                         putWindowsOS(buffer, error.os);
                         buffer.writef(`</td><td>%s</td></tr>`, error.message);
@@ -1487,7 +1492,8 @@ int main(string[] args)
         .addPubRoute("/chota.min.css",  "text/css")
         .addPubRoute("/noscript.css",   "text/css")
         .addPubRoute("/humans.txt",     "text/plain")
-        .addPubRoute("/robots.txt",     "text/plain")
+        .addRobotsRoute()
+        .addSitemapRoutes()
     ;
     
     http.start(port);

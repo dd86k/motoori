@@ -8,6 +8,7 @@ import std.json;
 import std.path;
 import std.string : toLower, indexOf;
 import std.algorithm.sorting : sort;
+import std.datetime.systime : SysTime;
 import utils : parseCode;
 
 private alias readFile = std.file.read;
@@ -26,6 +27,10 @@ private alias readFile = std.file.read;
 // For database loader only
 private JSONValue readJSON(string path)
 {
+    SysTime mtime = timeLastModified(path);
+    if (mtime > data_timestamp)
+        data_timestamp = mtime;
+
     // parseJSON already does text encoding enforcement
     return parseJSON(cast(string)readFile(path));
 }
@@ -402,6 +407,12 @@ WindowsModule databaseWindowsModule(string key)
     return cast()empty;
 }
 
+/// Newest modification time across the loaded data files
+SysTime databaseTimestamp()
+{
+    return data_timestamp;
+}
+
 //
 // CRT facilities
 //
@@ -686,6 +697,8 @@ DatabaseCrt[] data_crt;
 WindowsHeader[] data_windows_headers;
 WindowsModule[] data_windows_modules;
 WindowsRelease[] data_windows_releases;
+
+SysTime data_timestamp;
 
 // Load-time only, dropped once every module scan is merged
 size_t[string] cache_windows_modules;      // module name -> data_windows_modules index
