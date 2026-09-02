@@ -16,6 +16,10 @@ alias readAll = std.file.read;
 
 private:
 
+// Public resources are served from fixed URLs without a cache-busting suffix,
+// so the window has to stay short enough for an update to be picked up.
+enum const(char) *PUB_CACHE_CONTROL = "public, max-age=3600";
+
 // temporary until moved to database
 import std.algorithm.sorting : sort;
 struct ErrorModule
@@ -1178,36 +1182,43 @@ int main(string[] args)
         //
         .addRoute("GET", "/favicon.png", (ref HTTPRequest req)
         {
+            req.addHeader("Cache-Control", PUB_CACHE_CONTROL);
             req.reply(200, HTTPReply.staticBuffer(buffer_favicon_png), "image/png");
             return REQUEST_OK;
         })
         .addRoute("GET", "/theme.js", (ref HTTPRequest req)
         {
+            req.addHeader("Cache-Control", PUB_CACHE_CONTROL);
             req.reply(200, HTTPReply.staticBuffer(buffer_theme_js), "text/javascript");
             return REQUEST_OK;
         })
         .addRoute("GET", "/main.css", (ref HTTPRequest req)
         {
+            req.addHeader("Cache-Control", PUB_CACHE_CONTROL);
             req.reply(200, HTTPReply.staticBuffer(buffer_main_css), "text/css");
             return REQUEST_OK;
         })
         .addRoute("GET", "/chota.min.css", (ref HTTPRequest req)
         {
+            req.addHeader("Cache-Control", PUB_CACHE_CONTROL);
             req.reply(200, HTTPReply.staticBuffer(buffer_chota_min_css), "text/css");
             return REQUEST_OK;
         })
         .addRoute("GET", "/humans.txt", (ref HTTPRequest req)
         {
+            req.addHeader("Cache-Control", PUB_CACHE_CONTROL);
             req.reply(200, HTTPReply.staticBuffer(buffer_humans_txt), "text/plain");
             return REQUEST_OK;
         })
         .addRoute("GET", "/robots.txt", (ref HTTPRequest req)
         {
+            req.addHeader("Cache-Control", PUB_CACHE_CONTROL);
             req.reply(200, HTTPReply.staticBuffer(buffer_robots_txt), "text/plain");
             return REQUEST_OK;
         })
         .addRoute("GET", "/noscript.css", (ref HTTPRequest req)
         {
+            req.addHeader("Cache-Control", PUB_CACHE_CONTROL);
             req.reply(200, HTTPReply.staticBuffer(buffer_noscript_css), "text/plain");
             return REQUEST_OK;
         })
