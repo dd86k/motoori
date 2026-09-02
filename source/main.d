@@ -145,8 +145,6 @@ void prepareHeader(ref HTTPReply buffer, ref HTTPRequest req, string title,
     buffer.put(`</ul>`); // right nav
     buffer.put(`</nav>`);
     
-    buffer.put(`<p class="warning">This is work in progress.</p>`);
-    
     buffer.put(`<div class="content">`);
 }
 // Row count past which a table stops being scannable by eye.
@@ -667,7 +665,7 @@ int main(string[] args)
                 "/windows/error-types", ActiveTab.windows);
             
             buffer.put(
-                `<p><a href="/windows/">Windows</a> / Error types</p>`~
+                `<p class="breadcrumb"><a href="/windows/">Windows</a> / Error types</p>`~
                 `<h1>Windows Error Formats</h1>`~
                 `<p>Windows contains a vast number of error codes in various formats. `~
                 `This document explains the Win32, HRESULT, NTSTATUS, and LSTATUS error codes.</p>`~
@@ -882,7 +880,7 @@ int main(string[] args)
                 "/windows/modules", ActiveTab.windows);
             
             buffer.put(
-                `<p><a href="/windows/">Windows</a> / Modules</p>`~
+                `<p class="breadcrumb"><a href="/windows/">Windows</a> / Modules</p>`~
                 `<h1>Windows Modules</h1>`~
                 `<p>`~
                 `Also known as a dynamic library, or in the context of Windows, a DLL, `~
@@ -932,7 +930,7 @@ int main(string[] args)
                 "/windows/headers", ActiveTab.windows);
             
             buffer.put(
-                `<p><a href="/windows/">Windows</a> / Headers</p>`~
+                `<p class="breadcrumb"><a href="/windows/">Windows</a> / Headers</p>`~
                 `<h1>Windows Headers</h1>`~
                 `<p>`~
                 `In computer software developments, a header file in C and C++ programming `~
@@ -1107,7 +1105,7 @@ int main(string[] args)
                 ActiveTab.windows);
 
             buffer.writef(
-                `<p><a href="/windows/">Windows</a> / <a href="/windows/headers">Headers</a> / %s</p>`, winheader.key);
+                `<p class="breadcrumb"><a href="/windows/">Windows</a> / <a href="/windows/headers">Headers</a> / %s</p>`, winheader.key);
             buffer.writef(`<h1>%s</h1>`, winheader.name);
             buffer.writef(`<p>%s</p>`, winheader.description);
             buffer.put(`<h2>Associated Error Codes</h2>`);
@@ -1167,7 +1165,7 @@ int main(string[] args)
                 cast(string)sformat(canonbuf, "/windows/module/%s", mod.name),
                 ActiveTab.windows);
             
-            buffer.writef(`<p><a href="/windows/">Windows</a> / <a href="/windows/modules">Modules</a> / %s</p>`, mod.name);
+            buffer.writef(`<p class="breadcrumb"><a href="/windows/">Windows</a> / <a href="/windows/modules">Modules</a> / %s</p>`, mod.name);
             buffer.writef(`<h1>%s</h1>`, mod.name);
             buffer.writef(`<p>%s</p>`, mod.description);
             
@@ -1252,7 +1250,7 @@ int main(string[] args)
                 cast(string)sformat(canonbuf, "/windows/code/%s", formal),
                 ActiveTab.windows);
             
-            buffer.writef(`<p><a href="/windows/">Windows</a> / Code / %s</p>`, formal);
+            buffer.writef(`<p class="breadcrumb"><a href="/windows/">Windows</a> / Code / %s</p>`, formal);
             buffer.writef(`<h1>%s</h1>`, formal);
             buffer.writef(`<p>Decimal: %u &middot; Signed: %d</p>`, code, cast(int)code);
             
@@ -1358,7 +1356,7 @@ int main(string[] args)
                 ActiveTab.windows);
             
             buffer.writef(
-                `<p>`~
+                `<p class="breadcrumb"">`~
                 `<a href="/windows/">Windows</a> / `~
                 `<a href="/windows/headers">Headers</a> / `~
                 `<a href="/windows/header/%s">%s</a> / `~
