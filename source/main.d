@@ -92,7 +92,7 @@ void prepareHeader(ref HTTPReply buffer, string title, ActiveTab tab, string sea
     buffer.put(`</ul>`); // theme menu
     buffer.put(`<li>`);
     buffer.put(`<form action="/search">`); // search
-    buffer.put(`<input name="q" placeholder="Search"`);
+    buffer.put(`<input name="q" id="search-input" placeholder="Search"`);
     if (search_query) buffer.writef(` value="%s"`, search_query);
     buffer.put(` />`);
     buffer.put(`<input type="submit" value=" " class="button icon-only i i-search" style="margin:0;" />`);
@@ -132,6 +132,7 @@ void prepareFooter(ref HTTPReply buffer, bool tablejs = false)
     buffer.put(`</footer>`);
     
     buffer.put(`<script src="/theme.js"></script>`);
+    buffer.put(`<script src="/search.js"></script>`);
     if (tablejs)
         buffer.put(`<script src="/table.js"></script>`);
     
@@ -334,6 +335,7 @@ int main(string[] args)
     ubyte[] buffer_main_css      = cast(ubyte[])readAll( "pub/main.css" );
     ubyte[] buffer_noscript_css  = cast(ubyte[])readAll( "pub/noscript.css" );
     ubyte[] buffer_robots_txt    = cast(ubyte[])readAll( "pub/robots.txt" );
+    ubyte[] buffer_search_js     = cast(ubyte[])readAll( "pub/search.js" );
     ubyte[] buffer_table_js      = cast(ubyte[])readAll( "pub/table.js" );
     ubyte[] buffer_theme_js      = cast(ubyte[])readAll( "pub/theme.js" );
     writeln(" OK");
@@ -1288,6 +1290,7 @@ int main(string[] args)
         .addPubRoute("/favicon.png",    buffer_favicon_png,   "image/png")
         .addPubRoute("/theme.js",       buffer_theme_js,      "text/javascript")
         .addPubRoute("/table.js",       buffer_table_js,      "text/javascript")
+        .addPubRoute("/search.js",      buffer_search_js,     "text/javascript")
         .addPubRoute("/main.css",       buffer_main_css,      "text/css")
         .addPubRoute("/chota.min.css",  buffer_chota_min_css, "text/css")
         .addPubRoute("/noscript.css",   buffer_noscript_css,  "text/css")
