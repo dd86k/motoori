@@ -1201,6 +1201,8 @@ int main(string[] args)
             buffer.writef(`<p>Code: <a href="/windows/code/%s">%s</a> (%s)</p>`,
                 winsymbol.origId, winsymbol.origId, winsymbol.decId);
             
+            putWindowsCodeDecoding(buffer, winsymbol.id);
+            
             if (winsymbol.message.length)
             {
                 buffer.writef(
@@ -1209,8 +1211,6 @@ int main(string[] args)
                     winsymbol.message
                 );
             }
-            
-            putWindowsCodeDecoding(buffer, winsymbol.id);
             
             if (modules.length)
             {
