@@ -113,9 +113,9 @@ private void databaseLoadWindowsHeaders(string path)
             sym.key     = toLower(sym.name);
             sym.message = jsym["description"].str.idup;
             sym.origId  = jsym["id"].str.idup;
-            sym.decId   = text(sym.id);
             if (parseCode(sym.origId, sym.id) == false)
                 stderr.writeln("warning: parsing code '", sym.origId, "' failed");
+            sym.decId   = text(sym.id);
             
             winheader.symbolics ~= sym;
         }
