@@ -4,7 +4,7 @@ import std.compiler : version_major, version_minor;
 import std.format;
 import std.stdio;
 import std.getopt;
-import std.string : toLower;
+import std.string : toLower, stripRight;
 import motoori, database;
 import extra.windows;
 
@@ -19,6 +19,10 @@ private:
 // Public resources are served from fixed URLs without a cache-busting suffix,
 // so the window has to stay short enough for an update to be picked up.
 enum const(char) *PUB_CACHE_CONTROL = "public, max-age=3600";
+
+// Origin used to make canonical and og:url absolute. Null means: derive it from
+// the request, which is all a local run or a single-host deployment needs.
+__gshared string base_url;
 
 /// Serve a pre-cached public resource, under GET and HEAD.
 HTTPServer addPubRoute(HTTPServer http, string path, ubyte[] buffer, const(char) *contentType)
@@ -44,7 +48,27 @@ struct ErrorModule
     const(char)[] symbolic;
 }
 
-void prepareHeader(ref HTTPReply buffer, string title, ActiveTab tab, string search_query = null)
+/// Absolute origin for this request, or null when it can't be established.
+const(char)[] requestOrigin(ref HTTPRequest req, char[] buffer)
+{
+    if (base_url.length)
+        return base_url;
+
+    string host = req.header("Host");
+    if (validHost(host) == false)
+        return null;
+
+    // Behind a TLS-terminating proxy the connection itself is plain HTTP, so
+    // only the proxy can say what scheme the client actually used.
+    string scheme = req.header("X-Forwarded-Proto");
+    if (scheme != "https")
+        scheme = "http";
+
+    return sformat(buffer, "%s://%s", scheme, host);
+}
+
+void prepareHeader(ref HTTPReply buffer, ref HTTPRequest req, string title,
+    const(char)[] description, string canonical, ActiveTab tab, string search_query = null)
 {
     // NOTE: Could have done a Pug/Diet template converter (by line) but lazy
     buffer.put(`<!DOCTYPE html>`);
@@ -55,6 +79,26 @@ void prepareHeader(ref HTTPReply buffer, string title, ActiveTab tab, string sea
     buffer.put(`<meta property="og:site_name" content="OEDB">`);
     buffer.put(`<meta property="og:type" content="website">`);
     buffer.writef(`<meta property="og:title" content="%s">`, title);
+    if (description.length)
+    {
+        buffer.put(`<meta name="description" content="`);
+        putSummary(buffer, description);
+        buffer.put(`">`);
+        buffer.put(`<meta property="og:description" content="`);
+        putSummary(buffer, description);
+        buffer.put(`">`);
+    }
+    // Error pages pass no canonical: they have no one URL worth pointing at.
+    if (canonical.length)
+    {
+        char[300] originbuf = void;
+        const(char)[] origin = requestOrigin(req, originbuf);
+        if (origin.length)
+        {
+            buffer.writef(`<link rel="canonical" href="%s%s">`, origin, canonical);
+            buffer.writef(`<meta property="og:url" content="%s%s">`, origin, canonical);
+        }
+    }
     buffer.put(`<link rel="stylesheet" href="/chota.min.css">`);
     buffer.put(`<link rel="stylesheet" href="/main.css">`);
     buffer.put(`<link rel="icon" href="/favicon.png">`);
@@ -210,6 +254,10 @@ void putNtstatusDecoding(ref HTTPReply buffer, uint code)
     buffer.writef(`<li>Code: 0x%04x (%d)</li>`, layout.code, layout.code);
     buffer.put(`</ul>`);
 }
+const(char)[] crtDescription(char[] buffer, ref DatabaseCrt crt)
+{
+    return sformat(buffer, "Error codes and messages from the %s C runtime (%s).", crt.full, crt.arch);
+}
 void pageCrt(ref HTTPReply buffer, ref DatabaseCrt crt)
 {
     buffer.writef(`<p><a href="/crt/">C Runtimes</a> / %s</p>`, crt.name);
@@ -299,6 +347,7 @@ int main(string[] args)
         optres = getopt(args, config.caseSensitive,
         "from-folder",  "Load data from folder (default='data')", &odatafolder,
         "all",          "Listen to all addresses", &all,
+        "base-url",     "Origin for canonical URLs (default: request Host)", &base_url,
         "port",         "Listen to port (default=8999)", &port,
         "version",      "Show the version screen and exit.", &clipage,
         "license",      "Show the license screen and exit.", &clipage,
@@ -323,6 +372,9 @@ int main(string[] args)
         return 0;
     }
     
+    // Paths are appended verbatim, so the origin must not end in one
+    base_url = base_url.stripRight("/");
+
     write("Loading database..."); stdout.flush();
     databaseLoadFromFolder(odatafolder);
     writeln(" OK");
@@ -348,7 +400,7 @@ int main(string[] args)
         {
             HTTPReply buffer = HTTPReply.create(4 * 1024);
 
-            prepareHeader(buffer, "OEDB", ActiveTab.none);
+            prepareHeader(buffer, req, "OEDB", null, null, ActiveTab.none);
 
             int status = void;
             if (HttpServerException httpex = cast(HttpServerException)ex)
@@ -383,8 +435,11 @@ int main(string[] args)
             
             DatabaseStatistics dbstats = databaseStatistics();
             
-            prepareHeader(buffer, "OEDB", ActiveTab.none);
-            
+            prepareHeader(buffer, req, "OEDB",
+                "Online database of error codes and messages from Microsoft Windows "~
+                "and C runtimes, searchable by code, symbolic name, or message text.",
+                "/", ActiveTab.none);
+
             buffer.put(`<h1 class="title">Online Error Database</h1>`);
             buffer.put(`<div class="row" style="text-align:center;margin:2em;">`); // class="row"
             buffer.put(`<div class="col card">`); // windows header count
@@ -422,7 +477,10 @@ int main(string[] args)
         {
             HTTPReply buffer = HTTPReply.create(4 * 1024);
             
-            prepareHeader(buffer, "About | OEDB", ActiveTab.about);
+            prepareHeader(buffer, req, "About | OEDB",
+                "About OEDB: where the error entries come from, the libraries in use, "~
+                "and how to get in touch.",
+                "/about", ActiveTab.about);
             
             buffer.put(`<h1>About</h1>`);
             buffer.put(
@@ -466,7 +524,9 @@ int main(string[] args)
         {
             HTTPReply buffer = HTTPReply.create(4 * 1024);
             
-            prepareHeader(buffer, "C Runtimes | OEDB", ActiveTab.crt);
+            prepareHeader(buffer, req, "C Runtimes | OEDB",
+                "Error codes and messages from the MSVC, Glibc, and Musl C runtimes.",
+                "/crt/", ActiveTab.crt);
             
             buffer.put(`<h1>C Runtimes</h1>`);
             buffer.put(`<p>Pages:</p>`);
@@ -494,7 +554,8 @@ int main(string[] args)
             
             DatabaseCrt crt = databaseCrt("msvc"); // HACK
             
-            prepareHeader(buffer, "MSVC | OEDB", ActiveTab.crt);
+            char[256] descbuf = void;
+            prepareHeader(buffer, req, "MSVC | OEDB", crtDescription(descbuf, crt), "/crt/msvc", ActiveTab.crt);
 
             pageCrt(buffer, crt);
 
@@ -509,7 +570,8 @@ int main(string[] args)
             
             DatabaseCrt crt = databaseCrt("glibc"); // HACK
             
-            prepareHeader(buffer, "Glibc | OEDB", ActiveTab.crt);
+            char[256] descbuf = void;
+            prepareHeader(buffer, req, "Glibc | OEDB", crtDescription(descbuf, crt), "/crt/gnu", ActiveTab.crt);
 
             pageCrt(buffer, crt);
 
@@ -524,7 +586,8 @@ int main(string[] args)
             
             DatabaseCrt crt = databaseCrt("musl"); // HACK
             
-            prepareHeader(buffer, "Musl | OEDB", ActiveTab.crt);
+            char[256] descbuf = void;
+            prepareHeader(buffer, req, "Musl | OEDB", crtDescription(descbuf, crt), "/crt/musl", ActiveTab.crt);
 
             pageCrt(buffer, crt);
 
@@ -540,7 +603,10 @@ int main(string[] args)
         {
             HTTPReply buffer = HTTPReply.create(4 * 1024);
             
-            prepareHeader(buffer, "Windows | OEDB", ActiveTab.windows);
+            prepareHeader(buffer, req, "Windows | OEDB",
+                "The Windows error system: code formats, the modules and headers "~
+                "defining them, and the releases they were scanned from.",
+                "/windows/", ActiveTab.windows);
             
             buffer.put(`<h1>Windows Error System</h1>`);
             buffer.put(`<p>Pages:</p>`);
@@ -595,7 +661,10 @@ int main(string[] args)
         {
             HTTPReply buffer = HTTPReply.create(16 * 1024);
             
-            prepareHeader(buffer, "Windows Error Types | OEDB", ActiveTab.windows);
+            prepareHeader(buffer, req, "Windows Error Types | OEDB",
+                "The Win32, HRESULT, NTSTATUS, and LSTATUS error code formats "~
+                "explained, with their bit layouts and facility codes.",
+                "/windows/error-types", ActiveTab.windows);
             
             buffer.put(
                 `<p><a href="/windows/">Windows</a> / Error types</p>`~
@@ -807,7 +876,10 @@ int main(string[] args)
         {
             HTTPReply buffer = HTTPReply.create(32 * 1024);
             
-            prepareHeader(buffer, "Windows Modules | OEDB", ActiveTab.windows);
+            prepareHeader(buffer, req, "Windows Modules | OEDB",
+                "Windows modules (DLLs and executables) carrying error messages, "~
+                "with the releases each one was found in.",
+                "/windows/modules", ActiveTab.windows);
             
             buffer.put(
                 `<p><a href="/windows/">Windows</a> / Modules</p>`~
@@ -855,7 +927,9 @@ int main(string[] args)
         {
             HTTPReply buffer = HTTPReply.create(32 * 1024);
             
-            prepareHeader(buffer, "Windows Headers | OEDB", ActiveTab.windows);
+            prepareHeader(buffer, req, "Windows Headers | OEDB",
+                "Windows header files defining error codes and their symbolic names.",
+                "/windows/headers", ActiveTab.windows);
             
             buffer.put(
                 `<p><a href="/windows/">Windows</a> / Headers</p>`~
@@ -924,7 +998,11 @@ int main(string[] args)
             
             HTTPReply buffer = HTTPReply.create(32 * 1024);
             
-            prepareHeader(buffer, "Search | OEDB", ActiveTab.none, escaped);
+            // No canonical: every query is its own URL and robots.txt keeps
+            // crawlers out of here anyway.
+            prepareHeader(buffer, req, "Search | OEDB",
+                "Search Windows and C runtime error codes, symbolic names, and messages.",
+                null, ActiveTab.none, escaped);
             
             buffer.writef(`<h3>Results for "%s"</h3>`, escaped);
             
@@ -1014,9 +1092,20 @@ int main(string[] args)
             
             HTTPReply buffer = HTTPReply.create(8 * 1024);
             
-            char[256] titlebuf;
-            prepareHeader(buffer, cast(string)sformat(titlebuf, "%s | OEDB", winheader.name), ActiveTab.windows);
-            
+            char[256] descbuf = void;
+            const(char)[] description = winheader.description.length ?
+                winheader.description :
+                sformat(descbuf, "Error codes and symbolic names defined in the Windows header %s.",
+                    winheader.name);
+
+            char[256] titlebuf = void;
+            char[256] canonbuf = void;
+            prepareHeader(buffer, req,
+                cast(string)sformat(titlebuf, "%s | OEDB", winheader.name),
+                description,
+                cast(string)sformat(canonbuf, "/windows/header/%s", winheader.key),
+                ActiveTab.windows);
+
             buffer.writef(
                 `<p><a href="/windows/">Windows</a> / <a href="/windows/headers">Headers</a> / %s</p>`, winheader.key);
             buffer.writef(`<h1>%s</h1>`, winheader.name);
@@ -1064,8 +1153,19 @@ int main(string[] args)
             
             HTTPReply buffer = HTTPReply.create(8 * 1024);
             
-            char[256] titlebuf;
-            prepareHeader(buffer, cast(string)sformat(titlebuf, "%s | OEDB", mod.name), ActiveTab.windows);
+            char[256] descbuf = void;
+            const(char)[] description = mod.description.length ?
+                mod.description :
+                sformat(descbuf, "Error codes and messages found in the Windows module %s.",
+                    mod.name);
+
+            char[256] titlebuf = void;
+            char[256] canonbuf = void;
+            prepareHeader(buffer, req,
+                cast(string)sformat(titlebuf, "%s | OEDB", mod.name),
+                description,
+                cast(string)sformat(canonbuf, "/windows/module/%s", mod.name),
+                ActiveTab.windows);
             
             buffer.writef(`<p><a href="/windows/">Windows</a> / <a href="/windows/modules">Modules</a> / %s</p>`, mod.name);
             buffer.writef(`<h1>%s</h1>`, mod.name);
@@ -1127,8 +1227,30 @@ int main(string[] args)
             
             HTTPReply buffer = HTTPReply.create(16 * 1024);
             
-            char[64] titlebuf;
-            prepareHeader(buffer, cast(string)sformat(titlebuf, "%s | OEDB", formal), ActiveTab.windows);
+            // Counts rather than one of the messages: a bare code means different
+            // things in every subsystem that returns it, so quoting the first
+            // match would assert a meaning the page itself does not.
+            char[256] descbuf = void;
+            const(char)[] description = results_modules.length || results_headers.length ?
+                sformat(descbuf,
+                    "Windows error code %s (%u) decoded as HRESULT and NTSTATUS, "~
+                    "with the %u %s and %u %s defining it.",
+                    formal, code,
+                    results_modules.length, plural(results_modules.length, "module", "modules"),
+                    results_headers.length, plural(results_headers.length, "header", "headers")) :
+                sformat(descbuf,
+                    "Windows error code %s (%u) decoded as HRESULT and NTSTATUS. "~
+                    "No module or header in the database carries it.",
+                    formal, code);
+
+            char[64] titlebuf = void;
+            char[64] canonbuf = void;
+            prepareHeader(buffer, req,
+                cast(string)sformat(titlebuf, "%s | OEDB", formal),
+                description,
+                // Padded form: the same code is reachable as 5, 0x5 and 0x00000005
+                cast(string)sformat(canonbuf, "/windows/code/%s", formal),
+                ActiveTab.windows);
             
             buffer.writef(`<p><a href="/windows/">Windows</a> / Code / %s</p>`, formal);
             buffer.writef(`<h1>%s</h1>`, formal);
@@ -1220,8 +1342,20 @@ int main(string[] args)
             
             HTTPReply buffer = HTTPReply.create(16 * 1024);
             
-            char[256] titlebuf;
-            prepareHeader(buffer, cast(string)sformat(titlebuf[], "%s | OEDB", winsymbol.name), ActiveTab.windows);
+            char[512] descbuf = void;
+            const(char)[] description = winsymbol.message.length ?
+                sformat(descbuf, "%s (%s): %s",
+                    winsymbol.name, winsymbol.origId, limit(winsymbol.message, 300)) :
+                sformat(descbuf, "%s is Windows error code %s (%s).",
+                    winsymbol.name, winsymbol.origId, winsymbol.decId);
+
+            char[256] titlebuf = void;
+            char[256] canonbuf = void;
+            prepareHeader(buffer, req,
+                cast(string)sformat(titlebuf, "%s | OEDB", winsymbol.name),
+                description,
+                cast(string)sformat(canonbuf, "/windows/error/%s", winsymbol.key),
+                ActiveTab.windows);
             
             buffer.writef(
                 `<p>`~
