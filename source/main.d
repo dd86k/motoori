@@ -86,7 +86,7 @@ void prepareHeader(ref HTTPReply buffer, string title, ActiveTab tab, string sea
     
     buffer.put(`<div class="content">`);
 }
-void prepareFooter(ref HTTPReply buffer, string build_date = __DATE__)
+void prepareFooter(ref HTTPReply buffer)
 {
     buffer.put(`</div>`); // class="content"
     
@@ -98,7 +98,7 @@ void prepareFooter(ref HTTPReply buffer, string build_date = __DATE__)
     buffer.put(`</div>`);
     buffer.put(`<div>`);
     buffer.put(`<span>No rights reserved</span>`);
-    buffer.writef(`<span class="right">Built: %s</span>`, build_date);
+    buffer.put(`<span class="right">Built: Motoori `~PROJECT_VERSION~` (`~__TIMESTAMP__~`)</span>`);
     buffer.put(`</div>`);
     buffer.put(`</footer>`);
     
@@ -227,15 +227,18 @@ int main(string[] args)
         .onError((ref HTTPRequest req, Exception ex)
         {
             HTTPReply buffer = HTTPReply.create(4 * 1024);
-            
+
             prepareHeader(buffer, "OEDB", ActiveTab.none);
-            
+
+            int status = void;
             if (HttpServerException httpex = cast(HttpServerException)ex)
             {
+                status = httpex.code;
                 buffer.writef(`<h1>%s - %s</h1>`, httpex.code, httpex.msg);
             }
             else
             {
+                status = 500;
                 buffer.put(`<h1>500 - Internal Error</h1>`);
             }
             
@@ -250,8 +253,8 @@ int main(string[] args)
             }
             
             prepareFooter(buffer);
-            
-            req.reply(200, buffer, "text/html");
+
+            req.reply(status, buffer, "text/html");
             return REQUEST_OK;
         })
         .addRoute("GET", "/", (ref HTTPRequest req)
@@ -978,7 +981,6 @@ int main(string[] args)
             if (qcode.length == 0)
                 throw new HttpServerException(HTTPStatus.badRequest, HTTPMsg.badRequest, req);
             
-            // Throws if input too big anyway
             uint code = void;
             if (parseCode(qcode, code) == false)
                 throw new HttpServerException(HTTPStatus.badRequest, HTTPMsg.badRequest, req);
