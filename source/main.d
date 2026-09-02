@@ -297,7 +297,7 @@ const(char)[] crtDescription(char[] buffer, ref DatabaseCrt crt)
 }
 void pageCrt(ref HTTPReply buffer, ref DatabaseCrt crt)
 {
-    buffer.writef(`<p><a href="/crt/">C Runtimes</a> / %s</p>`, crt.name);
+    buffer.writef(`<p class="breadcrumb"><a href="/crt/">C Runtimes</a> / %s</p>`, crt.name);
     buffer.writef(`<h1>%s</h1>`, crt.full);
     buffer.writef(`<p>Architecture: %s</p>`, crt.arch);
     
