@@ -133,5 +133,6 @@ enum ActiveTab
     none,	/// index, etc.
     windows,
     crt,
+    api,
     about,
 }

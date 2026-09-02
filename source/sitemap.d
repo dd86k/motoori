@@ -24,6 +24,7 @@ private:
 static immutable string[] SITEMAP_PAGES = [
     "/",
     "/about",
+    "/api",
     "/windows/",
     "/windows/error-types",
     "/windows/modules",

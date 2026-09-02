@@ -5,7 +5,7 @@ import std.format;
 import std.stdio;
 import std.getopt;
 import std.string : toLower, stripRight;
-import motoori, database, sitemap;
+import motoori, database, sitemap, api;
 import extra.windows;
 
 import ddhttpd;
@@ -146,6 +146,10 @@ void prepareHeader(ref HTTPReply buffer, ref HTTPRequest req, string title,
         buffer.put(`<li class="tabs"><a href="/crt/" class="active">C Runtimes</a></li>`);
     else
         buffer.put(`<li class="tabs"><a href="/crt/">C Runtimes</a></li>`);
+    if (tab == ActiveTab.api)
+        buffer.put(`<li class="tabs"><a href="/api" class="active">API</a></li>`);
+    else
+        buffer.put(`<li class="tabs"><a href="/api">API</a></li>`);
     if (tab == ActiveTab.about)
         buffer.put(`<li class="tabs"><a href="/about" class="active">About</a></li>`);
     else
@@ -182,6 +186,15 @@ void putTableFilter(ref HTTPReply buffer, string table_id, string placeholder)
 {
     buffer.writef(`<input type="text" class="table-filter hidden" data-table="%s" placeholder="%s" />`,
         table_id, placeholder);
+}
+// Field reference tables on the API page
+enum FIELD_TABLE_HEAD = `<table class="table">`~
+    `<thead><tr><th>Field</th><th>Type</th><th>Values</th></tr></thead><tbody>`;
+enum FIELD_TABLE_FOOT = `</tbody></table>`;
+
+void putFieldRow(ref HTTPReply buffer, string name, string type, string values)
+{
+    buffer.writef(`<tr><td><code>%s</code></td><td>%s</td><td>%s</td></tr>`, name, type, values);
 }
 void prepareFooter(ref HTTPReply buffer, bool tablejs = false)
 {
@@ -414,6 +427,16 @@ int main(string[] args)
     HTTPServer http = new HTTPServer()
         .onError((ref HTTPRequest req, Exception ex)
         {
+            // Clients of the API get told what went wrong in the format they asked for
+            if (isAPIPath(req.path))
+            {
+                if (HttpServerException httpex = cast(HttpServerException)ex)
+                    replyAPIError(req, httpex.code, httpex.msg);
+                else
+                    replyAPIError(req, 500, "Internal Error");
+                return REQUEST_OK;
+            }
+
             HTTPReply buffer = HTTPReply.create(4 * 1024);
 
             prepareHeader(buffer, req, "OEDB", null, null, ActiveTab.none, null, true);
@@ -571,6 +594,279 @@ int main(string[] args)
             buffer.put(`<li><a href="https://feathericons.com/">Feather Icons 4.29</a></li>`);
             buffer.put(`<li><a href="https://www.gnu.org/software/libmicrohttpd/">libmicrohttpd</a></li>`);
             buffer.put(`</ul>`);
+            
+            prepareFooter(buffer);
+            
+            req.reply(200, buffer, "text/html");
+            return REQUEST_OK;
+        })
+        .addRoute("GET", "/api", (ref HTTPRequest req)
+        {
+            HTTPReply buffer = HTTPReply.create(32 * 1024);
+            
+            prepareHeader(buffer, req, "API | OEDB",
+                "JSON API for the error database: look up Windows codes, symbolic names, "~
+                "headers, modules, and C runtime messages.",
+                "/api", ActiveTab.api);
+            
+            buffer.put(`<h1>JSON API</h1>`);
+            buffer.put(
+                `<p>`~
+                `Everything the website shows is also served as JSON under `~
+                `<code>/api/v1</code>. All endpoints are <code>GET</code>, need no `~
+                `authentication, and are readable from a browser: replies carry `~
+                `<code>Access-Control-Allow-Origin: *</code>.`~
+                `</p>`~
+                `<p>`~
+                `The data only changes when a new scan is loaded, so replies are `~
+                `cacheable for an hour. There is no rate limit. Please be reasonable.`~
+                `</p>`
+            );
+            
+            buffer.put(`<h2>Endpoints</h2>`);
+            buffer.put(`<table class="table">`);
+            buffer.put(`<thead><tr><th>Endpoint</th><th>Returns</th></tr></thead>`);
+            buffer.put(`<tbody>`);
+            buffer.put(
+                `<tr><td><a href="/api/v1">/api/v1</a></td>`~
+                    `<td>Service metadata and the endpoint list</td></tr>`~
+                `<tr><td><a href="/api/v1/stats">/api/v1/stats</a></td>`~
+                    `<td>Entry counts and the date the data was last updated</td></tr>`~
+                `<tr><td><a href="/api/v1/search?q=access+denied">/api/v1/search?q=</a></td>`~
+                    `<td>Search over codes and message text, same as the site search</td></tr>`~
+                `<tr><td><a href="/api/v1/windows/code/0x80070005">/api/v1/windows/code/{code}</a></td>`~
+                    `<td>A code decoded as HRESULT and NTSTATUS, with every module and `~
+                    `header defining it. Takes hexadecimal, decimal, or signed decimal.</td></tr>`~
+                `<tr><td><a href="/api/v1/windows/error/ERROR_ACCESS_DENIED">/api/v1/windows/error/{symbolic}</a></td>`~
+                    `<td>A symbolic name, its code, and the modules carrying it</td></tr>`~
+                `<tr><td><a href="/api/v1/windows/headers">/api/v1/windows/headers</a></td>`~
+                    `<td>Every Windows header</td></tr>`~
+                `<tr><td><a href="/api/v1/windows/header/winerror.h">/api/v1/windows/header/{header}</a></td>`~
+                    `<td>One header with all of its symbolic entries</td></tr>`~
+                `<tr><td><a href="/api/v1/windows/modules">/api/v1/windows/modules</a></td>`~
+                    `<td>Every Windows module</td></tr>`~
+                `<tr><td><a href="/api/v1/windows/module/kernel32.dll">/api/v1/windows/module/{module}</a></td>`~
+                    `<td>One module with all of its messages</td></tr>`~
+                `<tr><td><a href="/api/v1/windows/releases">/api/v1/windows/releases</a></td>`~
+                    `<td>The Windows releases the module scans were taken from</td></tr>`~
+                `<tr><td><a href="/api/v1/crt">/api/v1/crt</a></td>`~
+                    `<td>The C runtimes on file</td></tr>`~
+                `<tr><td><a href="/api/v1/crt/msvc">/api/v1/crt/{runtime}</a></td>`~
+                    `<td>One C runtime with all of its messages</td></tr>`
+            );
+            buffer.put(`</tbody></table>`);
+            
+            buffer.put(`<h2 id="codes">Codes</h2>`);
+            buffer.put(
+                `<p>`~
+                `Wherever a code appear, on a code lookup, a symbolic entry, `~
+                `a module message, it comes as the three forms it gets written `~
+                `in, plus the format it most plausibly belongs to.`~
+                `</p>`~
+                `<pre>`~
+                `"code": 2147942405,`~"\n"~
+                `"hex": "0x80070005",`~"\n"~
+                `"signed": -2147024891,`~"\n"~
+                `"kind": "win32InHresult"`~
+                `</pre>`
+            );
+            buffer.put(FIELD_TABLE_HEAD);
+            putFieldRow(buffer, "code", "number",
+                `0 to 4294967295. The value as an unsigned 32-bit integer.`);
+            putFieldRow(buffer, "hex", "string",
+                `The same value, zero-padded to eight digits. This is the form `~
+                `<code>/windows/code/</code> canonicalizes to.`);
+            putFieldRow(buffer, "signed", "number",
+                `-2147483648 to 2147483647. The same value read as a signed integer, `~
+                `which is how shells and runtimes usually print it.`);
+            buffer.put(`<tr><td><code>kind</code></td><td>string</td><td>`);
+            {
+                import std.traits : EnumMembers;
+                bool comma;
+                foreach (WindowsCodeKind kind; EnumMembers!WindowsCodeKind)
+                {
+                    if (comma) buffer.put(", ");
+                    buffer.writef(`<code>%s</code>`, kind);
+                    comma = true;
+                }
+            }
+            buffer.put(`.</td></tr>`);
+            buffer.put(FIELD_TABLE_FOOT);
+            
+            buffer.put(`<h2 id="decoding">Decoding</h2>`);
+            buffer.put(
+                `<p>`~
+                `Code and symbolic lookups carry an <code>hresult</code> and an `~
+                `<code>ntstatus</code> object. Both are always present, whatever `~
+                `<code>kind</code> says, since either reading is legal for any 32-bit `~
+                `value. The <a href="/windows/error-types">error formats page</a> has `~
+                `the bit layouts these come from.`~
+                `</p>`~
+                `<h3><code>hresult</code></h3>`
+            );
+            buffer.put(FIELD_TABLE_HEAD);
+            putFieldRow(buffer, "severity", "boolean",
+                `S. <code>true</code> on failure, <code>false</code> on success.`);
+            putFieldRow(buffer, "reserved", "boolean",
+                `R. <code>false</code> in a well-formed HRESULT, unless `~
+                `<code>ntstatus</code> is set, where it belongs to the wrapped severity.`);
+            putFieldRow(buffer, "customer", "boolean",
+                `C. <code>true</code> for customer-defined values, <code>false</code> `~
+                `for Microsoft ones.`);
+            putFieldRow(buffer, "ntstatus", "boolean",
+                `N. <code>true</code> when the value wraps an NTSTATUS.`);
+            putFieldRow(buffer, "reservedX", "boolean",
+                `X. <code>false</code> everywhere but the TRK exceptions.`);
+            putFieldRow(buffer, "facility", "object",
+                `Error source. See <a href="#facility">facility</a>.`);
+            putFieldRow(buffer, "code", "number", `0 to 65535. The low 16 bits.`);
+            buffer.put(FIELD_TABLE_FOOT);
+
+            buffer.put(`<h3><code>ntstatus</code></h3>`);
+            buffer.put(FIELD_TABLE_HEAD);
+            putFieldRow(buffer, "severity", "number", `0 to 3.`);
+            putFieldRow(buffer, "severityName", "string",
+                `<code>STATUS_SEVERITY_SUCCESS</code>, `~
+                `<code>STATUS_SEVERITY_INFORMATIONAL</code>, `~
+                `<code>STATUS_SEVERITY_WARNING</code>, or `~
+                `<code>STATUS_SEVERITY_ERROR</code>.`);
+            putFieldRow(buffer, "customer", "boolean",
+                `C. <code>true</code> for customer-defined values.`);
+            putFieldRow(buffer, "reserved", "boolean",
+                `N. <code>false</code> in a well-formed NTSTATUS.`);
+            putFieldRow(buffer, "facility", "object",
+                `Error source. See <a href="#facility">facility</a>.`);
+            putFieldRow(buffer, "code", "number", `0 to 65535. The low 16 bits.`);
+            buffer.put(FIELD_TABLE_FOOT);
+
+            buffer.put(`<h3 id="facility"><code>facility</code></h3>`);
+            buffer.put(
+                `<p>`~
+                `Facility numbers are per format: the same id means different things `~
+                `under each, and the two lists are on the `~
+                `<a href="/windows/error-types#hresult">error formats page</a>.`~
+                `</p>`
+            );
+            buffer.put(FIELD_TABLE_HEAD);
+            putFieldRow(buffer, "id", "number",
+                `0 to 2047 under <code>hresult</code> (11 bits), 0 to 4095 under `~
+                `<code>ntstatus</code> (12 bits).`);
+            putFieldRow(buffer, "name", "string or null",
+                `Symbolic name, e.g. <code>FACILITY_WIN32</code>. `~
+                `<code>null</code> for an id MS-ERREF does not name.`);
+            putFieldRow(buffer, "description", "string or null",
+                `Short blurb, <code>null</code> alongside an unnamed facility.`);
+            buffer.put(FIELD_TABLE_FOOT);
+
+            buffer.put(`<h2 id="entries">Entries</h2>`);
+            buffer.put(
+                `<p>`~
+                `Fields carried by headers, modules, runtimes, and the entries under `~
+                `them. A listing gives the summary fields only; the page for a single `~
+                `header, module, or runtime adds its entries.`~
+                `</p>`
+            );
+            buffer.put(FIELD_TABLE_HEAD);
+            putFieldRow(buffer, "key", "string",
+                `Lowercase identifier, and the one to put in a URL. Header names and `~
+                `runtimes are reachable by <code>key</code>, modules by `~
+                `<code>name</code>.`);
+            putFieldRow(buffer, "name", "string",
+                `Display name of a header, module, runtime, or release.`);
+            putFieldRow(buffer, "description", "string or null",
+                `Blurb for a header, module, or symbolic entry. <code>null</code> when `~
+                `the source gives none, which is common for symbolic entries.`);
+            putFieldRow(buffer, "message", "string",
+                `Error text, verbatim. May span several lines and may hold `~
+                `<code>%1</code>-style insertion placeholders that Windows fills in at `~
+                `runtime, so it is not always a finished sentence.`);
+            putFieldRow(buffer, "symbolic", "string",
+                `Symbolic name, e.g. <code>ERROR_ACCESS_DENIED</code>.`);
+            putFieldRow(buffer, "header", "string",
+                `Name of the header defining a symbolic entry, with `~
+                `<code>headerKey</code> alongside it for the URL.`);
+            putFieldRow(buffer, "module", "string",
+                `File name of the module a message was found in.`);
+            putFieldRow(buffer, "arch", "string",
+                `Architecture a runtime was scanned on.`);
+            putFieldRow(buffer, "build", "string or null",
+                `Build a module scan was taken on, e.g. <code>10.0.26200.9168</code>.`);
+            buffer.put(`<tr><td><code>releases</code></td><td>array of strings</td><td>`);
+            buffer.put(`Release keys an entry was found in, currently `);
+            {
+                bool comma;
+                foreach (ref WindowsRelease release; databaseWindowsReleases())
+                {
+                    if (comma) buffer.put(", ");
+                    buffer.writef(`<code>%s</code>`, release.key);
+                    comma = true;
+                }
+            }
+            buffer.put(`. Only Windows module data carries these; `~
+                `<a href="/api/v1/windows/releases">/api/v1/windows/releases</a> `~
+                `describes them. A code with the same value but different text between `~
+                `releases is two entries, not one.`~
+                `</td></tr>`);
+            putFieldRow(buffer, "count", "number",
+                `Length of the array in the same reply. On a listing entry, `~
+                `<code>messages</code>, <code>modules</code>, and `~
+                `<code>symbolics</code> are counts of what the entry's own page returns.`);
+            buffer.put(FIELD_TABLE_FOOT);
+
+            buffer.put(`<h2 id="search">Search results</h2>`);
+            buffer.writef(
+                `<p>`~
+                `<code>/api/v1/search</code> takes the same queries as the site: a code `~
+                `in any of the three forms, or text to look for in messages. It returns `~
+                `at most %u results, and no more than one page of them &mdash; there is `~
+                `no cursor.`~
+                `</p>`,
+                searchLimit());
+            buffer.put(FIELD_TABLE_HEAD);
+            putFieldRow(buffer, "query", "string", `The query, echoed back.`);
+            putFieldRow(buffer, "type", "string",
+                `<code>windows-module</code>, <code>windows-symbol</code>, or `~
+                `<code>crt</code>, naming which of the three the entry came from.`);
+            putFieldRow(buffer, "id", "string",
+                `How the entry spells its own identifier: a code for `~
+                `<code>windows-module</code> and <code>crt</code> results, a symbolic `~
+                `name for <code>windows-symbol</code> ones.`);
+            putFieldRow(buffer, "source", "string",
+                `The module, header, or runtime the entry belongs to.`);
+            putFieldRow(buffer, "url", "string",
+                `Path of the page for this entry on the site, to hand back to a reader.`);
+            putFieldRow(buffer, "excerpt", "string",
+                `The matched text with up to 40 characters of either side, `~
+                `an ellipsis marking where it was cut. Absent on code queries, which `~
+                `match the code alone.`);
+            putFieldRow(buffer, "match", "string",
+                `The matched substring itself, present whenever `~
+                `<code>excerpt</code> is.`);
+            buffer.put(FIELD_TABLE_FOOT);
+
+            buffer.put(`<h2 id="errors">Errors</h2>`);
+            buffer.put(
+                `<p>`~
+                `A failed request answers with the matching status code and a body `~
+                `holding one <code>error</code> object, in place of whatever the `~
+                `endpoint would have returned.`~
+                `</p>`
+            );
+            buffer.put(FIELD_TABLE_HEAD);
+            putFieldRow(buffer, "error.status", "number",
+                `<code>400</code> for a code that will not parse or a search with no `~
+                `<code>q</code>, <code>404</code> for an unknown symbolic name, header, `~
+                `module, runtime, or endpoint, <code>500</code> for a server-side fault.`);
+            putFieldRow(buffer, "error.message", "string",
+                `Short reason, meant to be read rather than matched on.`);
+            buffer.put(FIELD_TABLE_FOOT);
+            buffer.put(
+                `<p>`~
+                `A well-formed code is never a 404: the reply decodes it and returns `~
+                `empty <code>modules</code> and <code>headers</code> arrays, since the `~
+                `decoding holds whether or not anything on file uses the value.`~
+                `</p>`
+            );
             
             prepareFooter(buffer);
             
@@ -1494,6 +1790,7 @@ int main(string[] args)
         .addPubRoute("/humans.txt",     "text/plain")
         .addRobotsRoute()
         .addSitemapRoutes()
+        .addAPIRoutes()
     ;
     
     http.start(port);

@@ -3,4 +3,5 @@
 
 User-agent: *
 Disallow: /search
+Disallow: /api/v1
 Crawl-delay: 50

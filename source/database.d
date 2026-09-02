@@ -547,6 +547,12 @@ private bool postSnipTruncated(const(char)[] text, const(char)[] input, ptrdiff_
     return (i + input.length + SNIPPET_PADDING) < text.length;
 }
 
+/// Cap on how many results a search returns, for the API to document.
+size_t searchLimit()
+{
+    return SEARCH_LIMIT;
+}
+
 SearchResult[] search(string input)
 {
     uint code = void;
