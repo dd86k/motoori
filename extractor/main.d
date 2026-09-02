@@ -10,79 +10,64 @@ import extract.utils;
 private:
 
 // Locate a single MUI
-void locateMUIFile(string val)
+void locateMUIFile(string val, string root)
 {
-    version (Windows)
-    {
-        string mui = locatemui(val);
-        if (mui == null) // retry with suffix
-            mui = locatemui(val~".dll");
-        writefln("%20s: %s", val, mui ? mui : "Not found");
-        exit(mui ? 2 : 0);
-    }
-    else
-        throw new GetOptException("Option --locate-mui is only available on Windows");
+    string mui = locatemui(val, root);
+    if (mui == null) // retry with suffix
+        mui = locatemui(val~".dll", root);
+    writefln("%20s: %s", val, mui ? mui : "Not found");
+    exit(mui ? 2 : 0);
 }
 
 // Check and list available MUIs
-void checkMUIFiles()
+void checkMUIFiles(string root)
 {
-    version (Windows)
+    foreach (mod; modules)
     {
-        foreach (mod; modules)
-        {
-            string mui = locatemui(mod.name);
-            if (mui == null) // retry with suffix
-                mui = locatemui(mod.name~".dll");
-            writefln("%20s: %s", mod.name, mui ? mui : "Not found");
-        }
-        exit(0);
+        string mui = locatemui(mod.name, root);
+        if (mui == null) // retry with suffix
+            mui = locatemui(mod.name~".dll", root);
+        writefln("%20s: %s", mod.name, mui ? mui : "Not found");
     }
-    else
-        throw new GetOptException("Option --list-mui is only available on Windows");
+    exit(0);
 }
 
-void checkCode(string val, bool all)
+void checkCode(string val, bool all, string root)
 {
-    version (Windows)
-    {
-        import extract.utils : parseCode;
-        import extract.resource.pe32 : ErrorMessage, loadmuimsgs;
-        uint code = void;
-        if (parseCode(val, code) == false)
-            throw new Exception("Not an error code");
-        
-        string[] muis;
-        if (all)
-            muis = fetchallmui();
-        else
-            foreach (mod; modules)
-            {
-                string mui = locatemui(mod.name);
-                if (mui)
-                    muis ~= mui;
-            }
+    import extract.utils : parseCode;
+    import extract.resource.pe32 : ErrorMessage, loadmuimsgs;
+    uint code = void;
+    if (parseCode(val, code) == false)
+        throw new Exception("Not an error code");
 
-        foreach (mui; muis)
+    string[] muis;
+    if (all)
+        muis = fetchallmui(root);
+    else
+        foreach (mod; modules)
         {
-            try
+            string mui = locatemui(mod.name, root);
+            if (mui)
+                muis ~= mui;
+        }
+
+    foreach (mui; muis)
+    {
+        try
+        {
+            scope ErrorMessage[] msgs = loadmuimsgs(mui);
+            foreach (msg; msgs)
             {
-                scope ErrorMessage[] msgs = loadmuimsgs(mui);
-                foreach (msg; msgs)
+                if (msg.id == code)
                 {
-                    if (msg.id == code)
-                    {
-                        writeln(mui);
-                        writeln('\t', msg);
-                    }
+                    writeln(mui);
+                    writeln('\t', msg);
                 }
             }
-            catch (Exception) {}
         }
-        exit(0);
+        catch (Exception) {}
     }
-    else
-        throw new GetOptException("Option --code= is only available on Windows");
+    exit(0);
 }
 
 void cliPlatformInfo()
@@ -114,6 +99,9 @@ void main(string[] args)
     bool olistmuis;
     string ocode;
     bool oall;
+    string oroot;
+    string oosbuild;
+    bool oosserver;
     GetoptResult optres = void;
     try
     {
@@ -141,10 +129,13 @@ void main(string[] args)
         //"create-archive", "Generate the compressed archive", &"",
         // CRT settings
         // Windows MUI settings
-        "locate-mui",   "Windows: Locate MUI module given name", &olocatemui,
-        "list-mui",     "Windows: Check availability of all MUI modules", &olistmuis,
-        "code",         "Windows: Check if this code exists in MUIs", &ocode,
-        "all-modules",  "Windows: Search every MUI under %windir% instead of the common ones", &oall,
+        "root",         "Read modules from an extracted image instead of the running system", &oroot,
+        "os-build",     "Release the image is from, e.g. '10.0.26100.4652' (required with --root)", &oosbuild,
+        "os-server",    "Treat --os-build as a Server release", &oosserver,
+        "locate-mui",   "Locate MUI module given name", &olocatemui,
+        "list-mui",     "Check availability of all MUI modules", &olistmuis,
+        "code",         "Check if this code exists in MUIs", &ocode,
+        "all-modules",  "Search every MUI under the root instead of the common ones", &oall,
         //"print-mui",  "Windows: Only print strings of MUI module", &strings,
         //"headerdesc", "Windows: Write header descriptions", &headerDesc,
         );
@@ -168,45 +159,42 @@ void main(string[] args)
     
     if (olocatemui)
     {
-        locateMUIFile(olocatemui);
+        locateMUIFile(olocatemui, oroot);
         exit(0);
     }
-    
+
     if (olistmuis)
     {
-        checkMUIFiles();
+        checkMUIFiles(oroot);
         exit(0);
     }
-    
+
     if (ocode)
     {
-        checkCode(ocode, oall);
+        checkCode(ocode, oall, oroot);
         exit(0);
     }
-    
+
     if (ogenflags == int.init)
         goto Lhelp;
-    
+
     try
     {
+        // An extracted image cannot be asked what release it is
+        OSInfo os;
+        if (oosbuild)
+            os = parseOSBuild(oosbuild, oosserver);
+        else if (oroot)
+            throw new Exception("Option --root needs --os-build to name the release");
+
         if (ogenflags & GEN_CRT)
             processCrtMessages(ooutdir);
-        
+
         if (ogenflags & GEN_WIN_HDR)
-        {
-            version (Windows)
-                processWindowsHeaders(ooutdir, oerrcsv);
-            else
-                throw new Exception("Option --generate-windows-headers is only available on Windows");
-        }
-        
+            processWindowsHeaders(ooutdir, oerrcsv);
+
         if (ogenflags & GEN_WIN_MOD)
-        {
-            version (Windows)
-                processWindowsModules(ooutdir, oall);
-            else
-                throw new Exception("Option --generate-windows-modules is only available on Windows");
-        }
+            processWindowsModules(ooutdir, oall, oroot, os);
     }
     catch (Exception ex)
     {

@@ -1,12 +1,8 @@
 module extract.source.windows;
 
-version (Windows):
-
-import std.stdio, std.encoding, std.string, std.file,
-       std.datetime.systime, std.datetime.stopwatch;
-import std.process : execute, environment;
+import std.stdio, std.string, std.file, std.datetime.systime;
+import std.process : environment;
 import std.json;
-import core.sys.windows.windows;
 import extract.resource.pe32;
 import extract.utils;
 
@@ -267,43 +263,101 @@ immutable Module[] headers = [
     {"xaudio2.h", "Declarations for the XAudio2 game audio API."},
 ];
 
-string locatemui(string mod, string locale = "en-US")
+// A root is either an extracted image root (Windows/System32/...) or a Windows
+// directory (System32/...); accept both so callers do not have to care which.
+private immutable string[] rootsubdirs = [
+    "System32", "SysWOW64", "Windows/System32", "Windows/SysWOW64",
+];
+
+// Without a root we are running on the target itself, where PATH already points
+// at System32.
+private string[] muidirs(string root)
 {
     import std.algorithm.iteration : splitter;
-    import std.file : exists;
+    import std.array : array;
     import std.path : pathSeparator, buildNormalizedPath;
 
-    string PATH = environment["PATH"];
+    if (root is null)
+        return environment.get("PATH", "").splitter(pathSeparator).array;
 
-    foreach (path; PATH.splitter(pathSeparator))
+    string[] dirs = [ root ];
+    foreach (string sub; rootsubdirs)
+        dirs ~= buildNormalizedPath(root, sub);
+    return dirs;
+}
+
+private string windir()
+{
+    string dir = environment.get("windir");
+    if (dir is null)
+        throw new Exception("%windir% is not set, use --root to point at an extracted image");
+    return dir;
+}
+
+// Windows filesystems are case-insensitive, an image extracted onto a Linux one
+// is not, so resolve against a folded index rather than probing paths.
+private string[string] muiindex;
+private string muiindexkey;
+
+private void indexdir(string dir)
+{
+    import std.path : baseName;
+
+    if (exists(dir) == false)
+        return;
+
+    // %windir% holds directories that deny listing (RtBackup, and so on)
+    try foreach (DirEntry entry; dirEntries(dir, SpanMode.shallow))
     {
-        if (exists(path) == false)
+        if (entry.isDir)
             continue;
 
-        string full = buildNormalizedPath(path, locale, mod ~ ".mui"); // .dll.mui form
+        string key = toLower(baseName(entry.name));
+        if (key in muiindex) // earlier directories win, as PATH order implies
+            continue;
 
-        if (exists(full))
-            return full;
-
-        string orig = buildNormalizedPath(path, mod); // .dll form
-
-        if (exists(orig))
-            return orig;
+        muiindex[key] = entry.name;
     }
+    catch (Exception) {}
+}
+
+string locatemui(string mod, string root = null, string locale = "en-US")
+{
+    import std.path : buildNormalizedPath;
+
+    string indexkey = root ~ "\0" ~ locale;
+    if (muiindexkey != indexkey)
+    {
+        muiindex = null;
+        foreach (string dir; muidirs(root))
+        {
+            indexdir(dir);
+            indexdir(buildNormalizedPath(dir, locale));
+        }
+        muiindexkey = indexkey;
+    }
+
+    string key = toLower(mod);
+
+    if (string *p = (key ~ ".mui") in muiindex) // .dll.mui form
+        return *p;
+
+    if (string *p = key in muiindex) // .dll form
+        return *p;
 
     return null;
 }
 
 // Walking manually instead of SpanMode.breadth: %windir% holds directories that
 // deny listing (RtBackup, and so on) and one of them aborts the whole iteration.
-string[] fetchallmui(string locale = "en-US")
+string[] fetchallmui(string root = null, string locale = "en-US")
 {
     import std.algorithm.searching : endsWith;
     import std.file : dirEntries, DirEntry, SpanMode;
     import std.path : baseName;
 
     string[] muis;
-    string[] pending = [ environment["windir"] ];
+    string[] pending = [ root ? root : windir() ];
 
     while (pending.length)
     {
@@ -441,14 +495,14 @@ void processWindowsHeaders(string outdir, string err_csv_path)
 
 // Resolve the MUIs to scan, either from the curated list or from everything
 // installed under %windir%. Names are the module filename, without the .mui suffix.
-private Module[] resolveModules(bool all, out string[] paths)
+private Module[] resolveModules(bool all, string root, out string[] paths)
 {
     if (all == false)
     {
         Module[] found;
         foreach (ref immutable(Module) mod; modules)
         {
-            string mui = locatemui(mod.name);
+            string mui = locatemui(mod.name, root);
             if (mui is null)
             {
                 stderr.writeln("warning: module '", mod.name, "' not found");
@@ -470,7 +524,7 @@ private Module[] resolveModules(bool all, out string[] paths)
     // The same module ships under System32 and SysWOW64, keep the first hit
     Module[] found;
     bool[string] seen;
-    foreach (string mui; fetchallmui())
+    foreach (string mui; fetchallmui(root))
     {
         string name = baseName(mui)[0..$-".mui".length];
         string key = toLower(name);
@@ -490,12 +544,13 @@ private Module[] resolveModules(bool all, out string[] paths)
 }
 
 // Read list of known MUIs and extract messages from them
-void processWindowsModules(string outdir, bool all)
+void processWindowsModules(string outdir, bool all, string root, OSInfo os)
 {
-    OSInfo os = getOSInfo();
+    if (os.key == null)
+        os = getOSInfo();
 
     string[] paths;
-    Module[] found = resolveModules(all, paths);
+    Module[] found = resolveModules(all, root, paths);
 
     mkchdir(outdir);
     mkchdir("windows");
@@ -574,27 +629,4 @@ string cleanDescription(string str)
         // Finalize
         .strip()
     ;
-}
-
-// get error message from windows function
-const(char)[] errorMessage(uint code)
-{
-    enum MSGBUF = 2 * 1024;
-    wchar[MSGBUF] buffer = void;
-
-    uint len = FormatMessageW(
-        FORMAT_MESSAGE_FROM_SYSTEM, // dwFlags
-        null, // lpSourve
-        code, // dwMessageId
-        0, // dwLanguageId
-        buffer.ptr, // lpBuffer
-        MSGBUF, // nSize
-        null); // Arguments
-
-    if (len == 0)
-        return "FormatMessageW Error";
-    
-    const(char)[] msg;
-    transcode(buffer[0 .. len], msg);
-    return msg.strip;
 }
