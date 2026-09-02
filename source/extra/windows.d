@@ -10,6 +10,137 @@ struct WindowsFacility
     const(char)[] description;
 }
 
+/// N bit, set when an HRESULT carries an NTSTATUS value.
+enum uint FACILITY_NT_BIT = 0x1000_0000;
+
+//
+// Code decoding
+//
+
+/// HRESULT fields, as laid out in MS-ERREF 2.1.
+struct HResultLayout
+{
+    bool severity;  /// S: set on failure
+    bool reserved;  /// R: must be clear unless N is set
+    bool customer;  /// C: set for customer-defined values
+    bool ntstatus;  /// N: set when the value is an NTSTATUS
+    bool reservedX; /// X: should be clear
+    ushort facility;
+    ushort code;
+}
+
+HResultLayout hresultLayout(uint code)
+{
+    HResultLayout layout = void;
+    layout.severity  = (code & 0x8000_0000) != 0;
+    layout.reserved  = (code & 0x4000_0000) != 0;
+    layout.customer  = (code & 0x2000_0000) != 0;
+    layout.ntstatus  = (code & FACILITY_NT_BIT) != 0;
+    layout.reservedX = (code & 0x0800_0000) != 0;
+    layout.facility  = hresultFacilityIDByCode(code);
+    layout.code      = cast(ushort)code;
+    return layout;
+}
+
+/// NTSTATUS fields, as laid out in MS-ERREF 2.3.
+struct NtstatusLayout
+{
+    ubyte severity; /// Sev, 2 bits
+    bool customer;  /// C: set for customer-defined values
+    bool reserved;  /// N: must be clear
+    ushort facility;
+    ushort code;
+}
+
+NtstatusLayout ntstatusLayout(uint code)
+{
+    NtstatusLayout layout = void;
+    layout.severity = (code >> 30) & 3;
+    layout.customer = (code & 0x2000_0000) != 0;
+    layout.reserved = (code & FACILITY_NT_BIT) != 0;
+    layout.facility = (code >> 16) & 4095; // 12 bits
+    layout.code     = cast(ushort)code;
+    return layout;
+}
+
+string ntstatusSeverityName(ubyte severity)
+{
+    switch (severity) {
+    case 0: return "STATUS_SEVERITY_SUCCESS";
+    case 1: return "STATUS_SEVERITY_INFORMATIONAL";
+    case 2: return "STATUS_SEVERITY_WARNING";
+    default: return "STATUS_SEVERITY_ERROR";
+    }
+}
+unittest
+{
+    HResultLayout hr = hresultLayout(0x8007_0005); // E_ACCESSDENIED
+    assert(hr.severity);
+    assert(hr.reserved == false);
+    assert(hr.customer == false);
+    assert(hr.ntstatus == false);
+    assert(hr.facility == FACILITY_WIN32);
+    assert(hr.code == 5);
+
+    NtstatusLayout nt = ntstatusLayout(0xC000_0005); // STATUS_ACCESS_VIOLATION
+    assert(nt.severity == 3);
+    assert(nt.customer == false);
+    assert(nt.reserved == false);
+    assert(nt.facility == 0);
+    assert(nt.code == 5);
+    assert(ntstatusSeverityName(nt.severity) == "STATUS_SEVERITY_ERROR");
+}
+
+/// Whether the code is a failure HRESULT in FACILITY_WIN32, the shape
+/// HRESULT_FROM_WIN32 produces.
+bool isHresultFromWin32(uint code)
+{
+    return (code & 0x8000_0000) != 0 && (code & FACILITY_NT_BIT) == 0 &&
+        hresultFacilityIDByCode(code) == FACILITY_WIN32;
+}
+unittest
+{
+    assert(isHresultFromWin32(0x8007_0005));
+    assert(isHresultFromWin32(0x8000_4005) == false);
+    assert(isHresultFromWin32(0x0007_0005) == false);
+}
+
+/// The most plausible reading of a code, picked from the bits that a
+/// well-formed value of each format is required to have.
+enum WindowsCodeKind
+{
+    success,
+    win32,
+    ntstatus,
+    ntstatusInHresult,
+    win32InHresult,
+    hresult,
+}
+
+WindowsCodeKind windowsCodeKind(uint code)
+{
+    if (code == 0)
+        return WindowsCodeKind.success;
+    if (code <= 0xffff)
+        return WindowsCodeKind.win32;
+    if (code & FACILITY_NT_BIT)
+        return WindowsCodeKind.ntstatusInHresult;
+    if (code & 0x4000_0000) // R, which an HRESULT must have clear when N is clear
+        return WindowsCodeKind.ntstatus;
+    if (isHresultFromWin32(code))
+        return WindowsCodeKind.win32InHresult;
+    return WindowsCodeKind.hresult;
+}
+unittest
+{
+    assert(windowsCodeKind(0) == WindowsCodeKind.success);
+    assert(windowsCodeKind(5) == WindowsCodeKind.win32);
+    assert(windowsCodeKind(0xC000_0005) == WindowsCodeKind.ntstatus);
+    assert(windowsCodeKind(0xD000_0005) == WindowsCodeKind.ntstatusInHresult);
+    assert(windowsCodeKind(0x8007_0005) == WindowsCodeKind.win32InHresult);
+    assert(windowsCodeKind(0x8000_4005) == WindowsCodeKind.hresult); // E_FAIL
+}
+
 //
 // HRESULT facility functions
 //

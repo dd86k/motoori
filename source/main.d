@@ -137,6 +137,66 @@ void putWindowsOS(ref HTTPReply buffer, WindowsOSSet os)
         buffer.writef(`<span class="tag is-small" title="%s">%s</span>`, release.name, release.key);
     }
 }
+// Read a code under both layouts. The bit tables mirror the ones on
+// /windows/error-types, so a reader can compare the documented layout with a
+// value filled into it.
+void putWindowsCodeDecoding(ref HTTPReply buffer, uint code)
+{
+    buffer.put(`<strong>As HRESULT:</strong>`);
+    putHResultDecoding(buffer, code);
+
+    buffer.put(`<strong>As NTSTATUS:</strong>`);
+    putNtstatusDecoding(buffer, code);
+}
+void putHResultDecoding(ref HTTPReply buffer, uint code)
+{
+    HResultLayout layout = hresultLayout(code);
+    WindowsFacility facility = hresultFacilityById(layout.facility);
+
+    buffer.put(`<ul>`);
+    buffer.writef(`<li>S: %d (%s)</li>`,
+        layout.severity, layout.severity ? "Failure" : "Success");
+    if (layout.reserved)
+        buffer.writef(`<li>R: 1 (%s)</li>`, layout.ntstatus ?
+            "Part of the wrapped NTSTATUS severity, since N is set" :
+            "Reserved, must be clear in a well-formed HRESULT");
+    buffer.writef(`<li>C: %d (%s)</li>`,
+        layout.customer, layout.customer ? "Customer-defined" : "Microsoft-defined");
+    buffer.writef(`<li>N: %d (%s)</li>`,
+        layout.ntstatus, layout.ntstatus ? "Wraps an NTSTATUS value" : "Not an NTSTATUS value");
+    if (layout.reservedX)
+        buffer.put(`<li>X: 1 (Reserved, only expected on the TRK exceptions)</li>`);
+    putFacilityItem(buffer, layout.facility, facility);
+    buffer.writef(`<li>Code: 0x%04x (%d)</li>`, layout.code, layout.code);
+    buffer.put(`</ul>`);
+}
+void putFacilityItem(ref HTTPReply buffer, ushort id, ref WindowsFacility facility)
+{
+    buffer.writef(`<li>Facility: 0x%03x (`, id);
+    if (facility.name)
+        buffer.writef(`%s &mdash; %s`, facility.name, facility.description);
+    else if (id == 0) // NTSTATUS has no name for it, unlike FACILITY_NULL
+        buffer.put(`Default`);
+    else
+        buffer.put(`Unknown facility`);
+    buffer.put(`)</li>`);
+}
+void putNtstatusDecoding(ref HTTPReply buffer, uint code)
+{
+    NtstatusLayout layout = ntstatusLayout(code);
+    WindowsFacility facility = ntstatusFacilityById(layout.facility);
+
+    buffer.put(`<ul>`);
+    buffer.writef(`<li>Sev: %d (%s)</li>`,
+        layout.severity, ntstatusSeverityName(layout.severity));
+    buffer.writef(`<li>C: %d (%s)</li>`,
+        layout.customer, layout.customer ? "Customer-defined" : "Microsoft-defined");
+    if (layout.reserved)
+        buffer.put(`<li>N: 1 (Reserved, must be clear in a well-formed NTSTATUS)</li>`);
+    putFacilityItem(buffer, layout.facility, facility);
+    buffer.writef(`<li>Code: 0x%04x (%d)</li>`, layout.code, layout.code);
+    buffer.put(`</ul>`);
+}
 void pageCrt(ref HTTPReply buffer, ref DatabaseCrt crt)
 {
     buffer.writef(`<p><a href="/crt/">C Runtimes</a> / %s</p>`, crt.name);
@@ -586,7 +646,7 @@ int main(string[] args)
                 `#define FACILITY_WIN32 0x0007`~"\n"~
                 `#define __HRESULT_FROM_WIN32(x) ((HRESULT)(x) <= 0 ? ((HRESULT)(x)) : ((HRESULT) (((x) & 0x0000FFFF) | (FACILITY_WIN32 << 16) | 0x80000000)))`~
                 `</pre>`~
-                `<h2 class="ntstatus">NTSTATUS</h2>`~
+                `<h2 id="ntstatus">NTSTATUS</h2>`~
                 `<p>`~
                 `NTSTATUS error codes are typically used for low-level operations `~
                 `such as machine check exceptions, debugger API, and the `~
@@ -1004,22 +1064,6 @@ int main(string[] args)
             if (parseCode(qcode, code) == false)
                 throw new HttpServerException(HTTPStatus.badRequest, HTTPMsg.badRequest, req);
             
-            // Associated facilities
-            ushort nstatus_facility_id = ntstatusFacilityIDByCode(code);
-            WindowsFacility ntstatus_facility = ntstatusFacilityById(nstatus_facility_id);
-            if (ntstatus_facility.name == string.init)
-            {
-                ntstatus_facility.name = "Unknown";
-                ntstatus_facility.id   = nstatus_facility_id;
-            }
-            ushort hresult_facility_id = hresultFacilityIDByCode(code);
-            WindowsFacility hresult_facility = hresultFacilityById(hresult_facility_id);
-            if (hresult_facility.name == string.init)
-            {
-                hresult_facility.name = "Unknown";
-                hresult_facility.id   = hresult_facility_id;
-            }
-            
             // Associated headers and modules
             SearchWindowsHeaderResult[] results_headers = searchWindowsHeadersByCode(code);
             SearchWindowsModuleResult[] results_modules = searchWindowsModulesByCode(code);
@@ -1028,15 +1072,16 @@ int main(string[] args)
             char[32] formalbuf = void;
             string formal = cast(string)sformat(formalbuf[], "0x%08x", code);
             
-            HTTPReply buffer = HTTPReply.create(8 * 1024);
+            HTTPReply buffer = HTTPReply.create(16 * 1024);
             
             char[64] titlebuf;
             prepareHeader(buffer, cast(string)sformat(titlebuf, "%s | OEDB", formal), ActiveTab.windows);
             
             buffer.writef(`<p><a href="/windows/">Windows</a> / Code / %s</p>`, formal);
             buffer.writef(`<h1>%s</h1>`, formal);
-            buffer.writef(`<p>HRESULT Facility: %s %s</p>`, hresult_facility.name, hresult_facility.id);
-            buffer.writef(`<p>NTSTATUS Facility: %s %s</p>`, ntstatus_facility.name, ntstatus_facility.id);
+            buffer.writef(`<p>Decimal: %u &middot; Signed: %d</p>`, code, cast(int)code);
+            
+            putWindowsCodeDecoding(buffer, code);
             
             buffer.put(`<h2>Associated Modules</h2>`);
             buffer.put(`<table>`);
@@ -1108,26 +1153,10 @@ int main(string[] args)
             if (winsymbol.name == string.init)
                 throw new HttpServerException(HTTPStatus.notFound, HTTPMsg.notFound, req);
             
-            // Associated facilities
-            ushort nstatus_facility_id = ntstatusFacilityIDByCode(winsymbol.id);
-            WindowsFacility ntstatus_facility = ntstatusFacilityById(nstatus_facility_id);
-            if (ntstatus_facility.name == string.init)
-            {
-                ntstatus_facility.name = "Unknown";
-                ntstatus_facility.id   = nstatus_facility_id;
-            }
-            ushort hresult_facility_id = hresultFacilityIDByCode(winsymbol.id);
-            WindowsFacility hresult_facility  = hresultFacilityById(hresult_facility_id);
-            if (hresult_facility.name == string.init)
-            {
-                hresult_facility.name = "Unknown";
-                hresult_facility.id   = hresult_facility_id;
-            }
-            
             // Associated modules
             SearchWindowsModuleResult[] modules = searchWindowsModulesByCode(winsymbol.id);
             
-            HTTPReply buffer = HTTPReply.create(8 * 1024);
+            HTTPReply buffer = HTTPReply.create(16 * 1024);
             
             char[256] titlebuf;
             prepareHeader(buffer, cast(string)sformat(titlebuf[], "%s | OEDB", winsymbol.name), ActiveTab.windows);
@@ -1142,9 +1171,8 @@ int main(string[] args)
                 winheader.name, winheader.name, winsymbol.name
             );
             buffer.writef(`<h1>%s</h1>`, winsymbol.name);
-            buffer.writef(`<p>Code: %s (%s)</p>`, winsymbol.origId, winsymbol.decId);
-            buffer.writef(`<p>HRESULT Facility: %s (%s)</p>`, hresult_facility.name, hresult_facility.id);
-            buffer.writef(`<p>NTSTATUS Facility: %s (%s)</p>`, ntstatus_facility.name, ntstatus_facility.id);
+            buffer.writef(`<p>Code: <a href="/windows/code/%s">%s</a> (%s)</p>`,
+                winsymbol.origId, winsymbol.origId, winsymbol.decId);
             
             if (winsymbol.message.length)
             {
@@ -1154,6 +1182,8 @@ int main(string[] args)
                     winsymbol.message
                 );
             }
+            
+            putWindowsCodeDecoding(buffer, winsymbol.id);
             
             if (modules.length)
             {
