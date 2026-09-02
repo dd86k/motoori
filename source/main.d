@@ -105,7 +105,17 @@ void prepareHeader(ref HTTPReply buffer, string title, ActiveTab tab, string sea
     
     buffer.put(`<div class="content">`);
 }
-void prepareFooter(ref HTTPReply buffer)
+// Row count past which a table stops being scannable by eye.
+enum FILTER_MIN_ROWS = 25;
+
+// Filter box for tables too long to scan by eye. Hidden until table.js reveals
+// it, since it does nothing without scripting.
+void putTableFilter(ref HTTPReply buffer, string table_id, string placeholder)
+{
+    buffer.writef(`<input type="text" class="table-filter hidden" data-table="%s" placeholder="%s" />`,
+        table_id, placeholder);
+}
+void prepareFooter(ref HTTPReply buffer, bool tablejs = false)
 {
     buffer.put(`</div>`); // class="content"
     
@@ -122,6 +132,8 @@ void prepareFooter(ref HTTPReply buffer)
     buffer.put(`</footer>`);
     
     buffer.put(`<script src="/theme.js"></script>`);
+    if (tablejs)
+        buffer.put(`<script src="/table.js"></script>`);
     
     buffer.put(`</body>`);
     buffer.put(`</html>`);
@@ -174,7 +186,7 @@ void putFacilityItem(ref HTTPReply buffer, ushort id, ref WindowsFacility facili
 {
     buffer.writef(`<li>Facility: 0x%03x (`, id);
     if (facility.name)
-        buffer.writef(`%s &mdash; %s`, facility.name, facility.description);
+        buffer.writef(`%s: %s`, facility.name, facility.description);
     else if (id == 0) // NTSTATUS has no name for it, unlike FACILITY_NULL
         buffer.put(`Default`);
     else
@@ -203,23 +215,30 @@ void pageCrt(ref HTTPReply buffer, ref DatabaseCrt crt)
     buffer.writef(`<h1>%s</h1>`, crt.full);
     buffer.writef(`<p>Architecture: %s</p>`, crt.arch);
     
+    putTableFilter(buffer, "messages", "Filter messages");
     buffer.put(
-        `<table class="table">`~
+        `<table class="table" id="messages">`~
         `<thead>`~
             `<tr><th>Code</th><th style="width:80%">Message</th></tr>`~
         `</thead>`~
         `<tbody>`
     );
-    
+
+    size_t count;
     foreach (e; crt.messages)
     {
+        ++count;
         buffer.writef(
             `<tr><td id="%s">%s</td><td>%s</td></tr>`,
             e.origId, e.code, e.message
         );
     }
-    
-    buffer.put(`</tbody></table>`);
+
+    buffer.put(`</tbody>`);
+    buffer.writef(`<tfoot><tr><td colspan="2">%s %s</td></tr></tfoot>`,
+        count,
+        plural(count,"entry","entries"));
+    buffer.put(`</table>`);
 }
 
 /// Canonical page for a search query that can only mean one thing, null otherwise.
@@ -315,6 +334,7 @@ int main(string[] args)
     ubyte[] buffer_main_css      = cast(ubyte[])readAll( "pub/main.css" );
     ubyte[] buffer_noscript_css  = cast(ubyte[])readAll( "pub/noscript.css" );
     ubyte[] buffer_robots_txt    = cast(ubyte[])readAll( "pub/robots.txt" );
+    ubyte[] buffer_table_js      = cast(ubyte[])readAll( "pub/table.js" );
     ubyte[] buffer_theme_js      = cast(ubyte[])readAll( "pub/theme.js" );
     writeln(" OK");
     
@@ -473,10 +493,10 @@ int main(string[] args)
             DatabaseCrt crt = databaseCrt("msvc"); // HACK
             
             prepareHeader(buffer, "MSVC | OEDB", ActiveTab.crt);
-            
+
             pageCrt(buffer, crt);
-            
-            prepareFooter(buffer);
+
+            prepareFooter(buffer, true);
             
             req.reply(200, buffer, "text/html");
             return REQUEST_OK;
@@ -488,10 +508,10 @@ int main(string[] args)
             DatabaseCrt crt = databaseCrt("glibc"); // HACK
             
             prepareHeader(buffer, "Glibc | OEDB", ActiveTab.crt);
-            
+
             pageCrt(buffer, crt);
-            
-            prepareFooter(buffer);
+
+            prepareFooter(buffer, true);
             
             req.reply(200, buffer, "text/html");
             return REQUEST_OK;
@@ -503,10 +523,10 @@ int main(string[] args)
             DatabaseCrt crt = databaseCrt("musl"); // HACK
             
             prepareHeader(buffer, "Musl | OEDB", ActiveTab.crt);
-            
+
             pageCrt(buffer, crt);
-            
-            prepareFooter(buffer);
+
+            prepareFooter(buffer, true);
             
             req.reply(200, buffer, "text/html");
             return REQUEST_OK;
@@ -800,8 +820,9 @@ int main(string[] args)
             );
             
             WindowsModule[] modulelist = databaseWindowsModules();
+            putTableFilter(buffer, "modules", "Filter modules");
             buffer.put(
-                `<table class="table">`~
+                `<table class="table" id="modules">`~
                 `<thead><tr><th>Name</th><th>Found in</th><th>Description</th></tr></thead>`~
                 `<tbody>`
             );
@@ -823,8 +844,8 @@ int main(string[] args)
                 plural(count,"entry","entries"));
             buffer.put(`</table>`);
             
-            prepareFooter(buffer);
-            
+            prepareFooter(buffer, true);
+
             req.reply(200, buffer, "text/html");
             return REQUEST_OK;
         })
@@ -852,7 +873,8 @@ int main(string[] args)
             buffer.put(`<p>A list of headers can be found below.</p>`);
             
             WindowsHeader[] winheaders = databaseWindowsHeaders();
-            buffer.put(`<table class="table">`);
+            putTableFilter(buffer, "headers", "Filter headers");
+            buffer.put(`<table class="table" id="headers">`);
             buffer.put(`<thead><tr><th>Name</th><th>Abstract</th></tr></thead>`);
             buffer.put(`<tbody>`);
             size_t count;
@@ -870,8 +892,8 @@ int main(string[] args)
                 plural(count,"entry","entries"));
             buffer.put(`</table>`);
             
-            prepareFooter(buffer);
-            
+            prepareFooter(buffer, true);
+
             req.reply(200, buffer, "text/html");
             return REQUEST_OK;
         })
@@ -999,7 +1021,8 @@ int main(string[] args)
             buffer.writef(`<p>%s</p>`, winheader.description);
             buffer.put(`<h2>Associated Error Codes</h2>`);
             buffer.put(`<p>Below is a list of error codes found for this header.</p>`);
-            buffer.put(`<table>`);
+            putTableFilter(buffer, "codes", "Filter error codes");
+            buffer.put(`<table id="codes">`);
             buffer.put(`<thead>`);
             buffer.put(`<tr><th>Symbolic</th><th>Value</th><th>Description</th></tr>`);
             buffer.put(`</thead>`);
@@ -1022,8 +1045,8 @@ int main(string[] args)
             buffer.put(`</tfoot>`);
             buffer.put(`</table>`);
             
-            prepareFooter(buffer);
-            
+            prepareFooter(buffer, true);
+
             req.reply(200, buffer, "text/html");
             return REQUEST_OK;
         })
@@ -1048,8 +1071,9 @@ int main(string[] args)
             
             buffer.put(`<h2>Associated Error Codes</h2>`);
             buffer.put(`<p>Below lists error codes and symbolic names found for this module.</p>`);
-            
-            buffer.put(`<table>`);
+
+            putTableFilter(buffer, "codes", "Filter error codes");
+            buffer.put(`<table id="codes">`);
             buffer.put(`<thead><tr><th>Code</th><th>Found in</th><th>Description</th></tr></thead>`);
             buffer.put(`<tbody>`);
             size_t count;
@@ -1076,8 +1100,8 @@ int main(string[] args)
             buffer.put(`</tfoot>`);
             buffer.put(`</table>`);
             
-            prepareFooter(buffer);
-            
+            prepareFooter(buffer, true);
+
             req.reply(200, buffer, "text/html");
             return REQUEST_OK;
         })
@@ -1110,8 +1134,15 @@ int main(string[] args)
             
             putWindowsCodeDecoding(buffer, code);
             
+            // Most codes match a handful of entries, but the low numeric ones
+            // collide across nearly every subsystem, so only offer the filter there.
+            bool filter_mods = results_modules.length >= FILTER_MIN_ROWS;
+            bool filter_headers = results_headers.length >= FILTER_MIN_ROWS;
+
             buffer.put(`<h2>Associated Modules</h2>`);
-            buffer.put(`<table>`);
+            if (filter_mods)
+                putTableFilter(buffer, "modules", "Filter modules");
+            buffer.put(`<table id="modules">`);
             buffer.put(`<thead><tr><th>Module</th><th>Found in</th><th>Description</th></tr></thead>`);
             buffer.put(`<tbody>`);
             size_t count_mods;
@@ -1133,7 +1164,9 @@ int main(string[] args)
             buffer.put(`</tfoot></table>`);
 
             buffer.put(`<h2>Associated Headers</h2>`);
-            buffer.put(`<table>`);
+            if (filter_headers)
+                putTableFilter(buffer, "headers", "Filter headers");
+            buffer.put(`<table id="headers">`);
             buffer.put(`<thead><tr><th>Header</th><th>Symbolic</th><th>Description</th></tr></thead>`);
             buffer.put(`<tbody>`);
             size_t count_headers;
@@ -1157,8 +1190,8 @@ int main(string[] args)
             buffer.writef(`<tr><td colspan="3">%s %s</td></tr>`,
                 count_headers, plural(count_headers,"entry","entries"));
             buffer.put(`</tfoot></table>`);
-            
-            prepareFooter(buffer);
+
+            prepareFooter(buffer, filter_mods || filter_headers);
 
             req.reply(200, buffer, "text/html");
             GC.collect();
@@ -1254,6 +1287,7 @@ int main(string[] args)
         //
         .addPubRoute("/favicon.png",    buffer_favicon_png,   "image/png")
         .addPubRoute("/theme.js",       buffer_theme_js,      "text/javascript")
+        .addPubRoute("/table.js",       buffer_table_js,      "text/javascript")
         .addPubRoute("/main.css",       buffer_main_css,      "text/css")
         .addPubRoute("/chota.min.css",  buffer_chota_min_css, "text/css")
         .addPubRoute("/noscript.css",   buffer_noscript_css,  "text/css")
