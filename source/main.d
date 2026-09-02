@@ -24,13 +24,34 @@ enum const(char) *PUB_CACHE_CONTROL = "public, max-age=3600";
 // the request, which is all a local run or a single-host deployment needs.
 __gshared string base_url;
 
-/// Serve a pre-cached public resource, under GET and HEAD.
-HTTPServer addPubRoute(HTTPServer http, string path, ubyte[] buffer, const(char) *contentType)
+/// Serve a public resource, under GET and HEAD.
+///
+/// Release builds read the file once, at startup, and hand MHD a persistent
+/// pointer to it. Debug builds re-read it per request, so editing a stylesheet
+/// or a script only needs a refresh; the reply has to be copied there, as the
+/// bytes are GC-owned and would otherwise be collected under MHD.
+HTTPServer addPubRoute(HTTPServer http, string path, const(char) *contentType)
 {
+    debug
+        string source = "pub"~path;
+    else
+        ubyte[] buffer = cast(ubyte[])readAll( "pub"~path );
+
     int delegate(ref HTTPRequest) handler = (ref HTTPRequest req)
     {
-        req.addHeader("Cache-Control", PUB_CACHE_CONTROL);
-        req.reply(200, HTTPReply.staticBuffer(buffer), contentType);
+        debug
+        {
+            req.addHeader("Cache-Control", "no-store");
+            try
+                req.reply(200, HTTPReply.copyBuffer( readAll(source) ), contentType);
+            catch (Exception ex) // Mid-edit file, or one that just got removed
+                req.reply(500, HTTPReply.copyBuffer(ex.msg), "text/plain");
+        }
+        else
+        {
+            req.addHeader("Cache-Control", PUB_CACHE_CONTROL);
+            req.reply(200, HTTPReply.staticBuffer(buffer), contentType);
+        }
         return REQUEST_OK;
     };
 
@@ -377,19 +398,11 @@ int main(string[] args)
     databaseLoadFromFolder(odatafolder);
     writeln(" OK");
     
-    // Reading it once into memory to reduce I/O and load times
-    write("Pre-caching public resources..."); stdout.flush();
-    ubyte[] buffer_chota_min_css = cast(ubyte[])readAll( "pub/chota.min.css" );
-    ubyte[] buffer_favicon_png   = cast(ubyte[])readAll( "pub/favicon.png" );
-    ubyte[] buffer_humans_txt    = cast(ubyte[])readAll( "pub/humans.txt" );
-    ubyte[] buffer_main_css      = cast(ubyte[])readAll( "pub/main.css" );
-    ubyte[] buffer_noscript_css  = cast(ubyte[])readAll( "pub/noscript.css" );
-    ubyte[] buffer_robots_txt    = cast(ubyte[])readAll( "pub/robots.txt" );
-    ubyte[] buffer_search_js     = cast(ubyte[])readAll( "pub/search.js" );
-    ubyte[] buffer_table_js      = cast(ubyte[])readAll( "pub/table.js" );
-    ubyte[] buffer_theme_js      = cast(ubyte[])readAll( "pub/theme.js" );
-    writeln(" OK");
-    
+    debug
+        writeln("Public resources served from disk (debug build)");
+    else
+        writeln("Pre-caching public resources");
+
     // vibe-http has:
     // - much longer compile times and memory usage
     // - issues compiling with specific compilers
@@ -1419,15 +1432,15 @@ int main(string[] args)
         // pub content
         // remember, FS stuff in vibe-d ballooned memory usage in problematic ways
         //
-        .addPubRoute("/favicon.png",    buffer_favicon_png,   "image/png")
-        .addPubRoute("/theme.js",       buffer_theme_js,      "text/javascript")
-        .addPubRoute("/table.js",       buffer_table_js,      "text/javascript")
-        .addPubRoute("/search.js",      buffer_search_js,     "text/javascript")
-        .addPubRoute("/main.css",       buffer_main_css,      "text/css")
-        .addPubRoute("/chota.min.css",  buffer_chota_min_css, "text/css")
-        .addPubRoute("/noscript.css",   buffer_noscript_css,  "text/css")
-        .addPubRoute("/humans.txt",     buffer_humans_txt,    "text/plain")
-        .addPubRoute("/robots.txt",     buffer_robots_txt,    "text/plain")
+        .addPubRoute("/favicon.png",    "image/png")
+        .addPubRoute("/theme.js",       "text/javascript")
+        .addPubRoute("/table.js",       "text/javascript")
+        .addPubRoute("/search.js",      "text/javascript")
+        .addPubRoute("/main.css",       "text/css")
+        .addPubRoute("/chota.min.css",  "text/css")
+        .addPubRoute("/noscript.css",   "text/css")
+        .addPubRoute("/humans.txt",     "text/plain")
+        .addPubRoute("/robots.txt",     "text/plain")
     ;
     
     http.start(port);
