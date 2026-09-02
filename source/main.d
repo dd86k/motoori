@@ -107,6 +107,17 @@ void prepareFooter(ref HTTPReply buffer, string build_date = __DATE__)
     buffer.put(`</body>`);
     buffer.put(`</html>`);
 }
+// Write the OS releases an entry was found in, as tags
+void putWindowsOS(ref HTTPReply buffer, WindowsOSSet os)
+{
+    foreach (size_t i, ref WindowsRelease release; databaseWindowsReleases())
+    {
+        if ((os & (1 << i)) == 0)
+            continue;
+
+        buffer.writef(`<span class="tag is-small" title="%s">%s</span>`, release.name, release.key);
+    }
+}
 void pageCrt(ref HTTPReply buffer, ref DatabaseCrt crt)
 {
     buffer.writef(`<p><a href="/crt/">C Runtimes</a> / %s</p>`, crt.name);
@@ -438,6 +449,20 @@ int main(string[] args)
                 `</p>`
             );
             
+            // Legend for the "Found in" tags used on module pages
+            buffer.put(`<h2>Scanned Releases</h2>`);
+            buffer.put(`<p>Module messages are tagged with the releases they were found on.</p>`);
+            buffer.put(`<table>`);
+            buffer.put(`<thead><tr><th>Tag</th><th>Release</th><th>Build</th></tr></thead>`);
+            buffer.put(`<tbody>`);
+            foreach (ref WindowsRelease release; databaseWindowsReleases())
+            {
+                buffer.writef(
+                    `<tr><td><span class="tag is-small">%s</span></td><td>%s</td><td>%s</td></tr>`,
+                    release.key, release.name, release.build);
+            }
+            buffer.put(`</tbody></table>`);
+
             prepareFooter(buffer);
             
             req.reply(200, buffer, "text/html");
@@ -676,7 +701,7 @@ int main(string[] args)
             WindowsModule[] modulelist = databaseWindowsModules();
             buffer.put(
                 `<table class="table">`~
-                `<thead><tr><th>Name</th><th>Description</th></tr></thead>`~
+                `<thead><tr><th>Name</th><th>Found in</th><th>Description</th></tr></thead>`~
                 `<tbody>`
             );
             size_t count;
@@ -685,11 +710,14 @@ int main(string[] args)
                 ++count;
                 buffer.put(`<tr>`);
                 buffer.writef(`<td><a href="/windows/module/%s">%s</a></td>`, mod.name, mod.name);
+                buffer.put(`<td>`);
+                putWindowsOS(buffer, mod.os);
+                buffer.put(`</td>`);
                 buffer.writef(`<td>%s</td>`, mod.description);
                 buffer.put(`</tr>`);
             }
             buffer.put(`</tbody>`);
-            buffer.writef(`<tfoot><tr><td colspan="2">%s %s</td></tr></tfoot>`,
+            buffer.writef(`<tfoot><tr><td colspan="3">%s %s</td></tr></tfoot>`,
                 count,
                 plural(count,"entry","entries"));
             buffer.put(`</table>`);
@@ -807,6 +835,11 @@ int main(string[] args)
                     buffer.put(title_type);
                     buffer.put(" - ");
                     buffer.put(result.name);
+                    if (result.os)
+                    {
+                        buffer.put(" ");
+                        putWindowsOS(buffer, result.os);
+                    }
                     buffer.put(`</div>`);
                     
                     if (result.needle)
@@ -908,13 +941,13 @@ int main(string[] args)
             buffer.put(`<p>Below lists error codes and symbolic names found for this module.</p>`);
             
             buffer.put(`<table>`);
-            buffer.put(`<thead><tr><th>Code</th><th>Description</th></tr></thead>`);
+            buffer.put(`<thead><tr><th>Code</th><th>Found in</th><th>Description</th></tr></thead>`);
             buffer.put(`<tbody>`);
             size_t count;
             foreach (err; mod.messages)
             {
                 ++count;
-                
+
                 import utils : sformatWindowsCode;
                 char[32] buf = void;
                 // "shorten" the error code for URL and readability
@@ -922,14 +955,15 @@ int main(string[] args)
                 buffer.writef(
                     `<tr>`~
                     `<td><a href="/windows/code/%s">%s</a></td>`~
-                    `<td>%s</td>`~
-                    `</tr>`,
-                    formal, formal, err.message
+                    `<td>`,
+                    formal, formal
                 );
+                putWindowsOS(buffer, err.os);
+                buffer.writef(`</td><td>%s</td></tr>`, err.message);
             }
             buffer.put(`</tbody>`);
             buffer.put(`<tfoot>`);
-            buffer.writef(`<tr><td colspan="2">%s %s</td></tr>`, count, plural(count,"entry","entries"));
+            buffer.writef(`<tr><td colspan="3">%s %s</td></tr>`, count, plural(count,"entry","entries"));
             buffer.put(`</tfoot>`);
             buffer.put(`</table>`);
             
@@ -985,7 +1019,7 @@ int main(string[] args)
             
             buffer.put(`<h2>Associated Modules</h2>`);
             buffer.put(`<table>`);
-            buffer.put(`<thead><tr><th>Module</th><th>Description</th></tr></thead>`);
+            buffer.put(`<thead><tr><th>Module</th><th>Found in</th><th>Description</th></tr></thead>`);
             buffer.put(`<tbody>`);
             size_t count_mods;
             foreach (ref result; results_modules)
@@ -995,13 +1029,14 @@ int main(string[] args)
                 buffer.writef(
                     `<tr>`~
                     `<td><a href="/windows/module/%s">%s</a></td>`~
-                    `<td>%s</td>`~
-                    `</tr>`,
-                    result.module_.name, result.module_.name, result.error.message
+                    `<td>`,
+                    result.module_.name, result.module_.name
                 );
+                putWindowsOS(buffer, result.error.os);
+                buffer.writef(`</td><td>%s</td></tr>`, result.error.message);
             }
             buffer.put(`</tbody><tfoot>`);
-            buffer.writef(`<tr><td colspan="2">%s %s</td></tr>`, count_mods, plural(count_mods,"entry","entries"));
+            buffer.writef(`<tr><td colspan="3">%s %s</td></tr>`, count_mods, plural(count_mods,"entry","entries"));
             buffer.put(`</tfoot></table>`);
 
             buffer.put(`<h2>Associated Headers</h2>`);
@@ -1103,27 +1138,29 @@ int main(string[] args)
             {
                 buffer.put(`<h2>Associated Modules</h2>`);
                 buffer.put(`<table>`);
-                buffer.put(`<thead><tr><th>Module</th><th>Code</th><th>Description</th></tr></thead>`);
+                buffer.put(`<thead><tr><th>Module</th><th>Code</th><th>Found in</th><th>Description</th></tr></thead>`);
                 buffer.put(`<tbody>`);
                 size_t count_mods;
                 foreach (mod; modules)
                 {
                     ++count_mods;
-                    
+
                     with (mod)
-                    buffer.writef(
-                        `<tr>`~
-                        `<td><a href="/windows/module/%s">%s</a></td>`~
-                        `<td><a href="/windows/code/%s">%s</a></td>`~
-                        `<td>%s</td>`~
-                        `</tr>`,
-                        module_.name, module_.name,
-                        error.origId, error.origId,
-                        error.message
-                    );
+                    {
+                        buffer.writef(
+                            `<tr>`~
+                            `<td><a href="/windows/module/%s">%s</a></td>`~
+                            `<td><a href="/windows/code/%s">%s</a></td>`~
+                            `<td>`,
+                            module_.name, module_.name,
+                            error.origId, error.origId
+                        );
+                        putWindowsOS(buffer, error.os);
+                        buffer.writef(`</td><td>%s</td></tr>`, error.message);
+                    }
                 }
                 buffer.put(`</tbody><tfoot>`);
-                buffer.writef(`<tr><td colspan="3">%s %s</td></tr>`, count_mods, plural(count_mods,"entry","entries"));
+                buffer.writef(`<tr><td colspan="4">%s %s</td></tr>`, count_mods, plural(count_mods,"entry","entries"));
                 buffer.put(`</tfoot></table>`);
             }
             

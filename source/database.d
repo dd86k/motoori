@@ -43,9 +43,20 @@ void databaseLoadFromFolder(string base)
     
     // Load Windows header and module entries
     static immutable pathWindows = "windows";
-    databaseLoadWindowsHeaders(buildPath(base, pathWindows, "headers.json"));
-    databaseLoadWindowsModules(buildPath(base, pathWindows, "modules.json"));
-    
+    string dirWindows = buildPath(base, pathWindows);
+    databaseLoadWindowsHeaders(buildPath(dirWindows, "headers.json"));
+
+    // One module scan per OS release (modules-10.json, modules-11.json, ...),
+    // loaded in name order so the older release takes the lower OS bit
+    string[] modulefiles;
+    foreach (DirEntry entry; dirEntries(dirWindows, "modules-*.json", SpanMode.shallow))
+        modulefiles ~= entry.name;
+    if (modulefiles.length == 0)
+        stderr.writeln("warning: no module scans found in '", dirWindows, "'");
+    foreach (string path; sort(modulefiles))
+        databaseLoadWindowsModules(path);
+    databaseSortWindowsModules();
+
     // Make up merged error stuff from Windows headers and modules.
     // 1. Make error entries out of every module error codes
     // 2. Update error entries with their symbolic name if available
@@ -178,63 +189,150 @@ WindowsSymbolic databaseWindowsSymbolicByName(string name, ref WindowsHeader hea
 // Windows modules
 //
 
+/// Set of OS releases, one bit per entry of databaseWindowsReleases()
+alias WindowsOSSet = uint;
+
+/// An OS release a module scan was taken from
+struct WindowsRelease
+{
+    string key;   /// Short key, e.g. "11"
+    string name;  /// Display name, e.g. "Windows 11"
+    string build; /// Build the scan was taken on
+}
+
 struct WindowsModuleError
 {
     uint id;
     string origId;
     string message;
+    WindowsOSSet os; /// Releases shipping this exact message
 }
 struct WindowsModule
 {
     string name;
     string description;
     WindowsModuleError[] messages;
+    WindowsOSSet os; /// Releases shipping this module
 }
 
+// NOTE: Scans overlap heavily
+//
+//       Consecutive Windows releases share the vast majority of their module
+//       messages. Rather than keeping one module list per release, entries are
+//       merged on load and tagged with the set of releases they appear in, so
+//       a code lookup reports "10 11" instead of returning two near-identical
+//       rows, and the shared message strings are only stored once.
 private void databaseLoadWindowsModules(string path)
 {
     // Open, read, and parse as JSON
     scope JSONValue j = readJSON(path);
-    
+
+    WindowsRelease release;
+    if (const(JSONValue) *jos = "os" in j)
+    {
+        release.key   = jos.object["key"].str.idup;
+        release.name  = jos.object["name"].str.idup;
+        release.build = jos.object["build"].str.idup;
+    }
+    else // pre-v2 scan, no OS metadata to go on
+    {
+        release.key = release.name = baseName(stripExtension(path));
+    }
+
+    if (data_windows_releases.length >= WindowsOSSet.sizeof * 8)
+        throw new Exception("Too many OS releases to tag");
+    WindowsOSSet osbit = 1 << data_windows_releases.length;
+    data_windows_releases ~= release;
+
     // NOTE: Somehow, all the module names are already lowercase
-    size_t modmsgcnt;
-    WindowsModule[] modules;
     foreach (jmodule; j["modules"].array)
     {
-        WindowsModuleError[] errors;
+        string name = jmodule["name"].str;
+
+        size_t modindex = void;
+        if (size_t *existing = name in cache_windows_modules)
+        {
+            modindex = *existing;
+        }
+        else
+        {
+            modindex = data_windows_modules.length;
+            data_windows_modules ~= WindowsModule(name.idup);
+            cache_windows_module_errors.length = data_windows_modules.length;
+            cache_windows_modules[ data_windows_modules[modindex].name ] = modindex;
+        }
+
+        WindowsModule *mod = &data_windows_modules[modindex];
+        mod.os |= osbit;
+        if (mod.description.length == 0) // --all-modules finds modules we have no blurb for
+            mod.description = jmodule["description"].str.idup;
+
+        size_t[][uint] *byCode = &cache_windows_module_errors[modindex];
         foreach (ref JSONValue jerror; jmodule["messages"].array)
         {
+            string origId  = jerror["code"].str;
+            string message = jerror["message"].str;
+
+            uint id = void;
+            if (parseCode(origId, id) == false)
+                stderr.writeln("warning: parsing code '", origId, "' failed");
+
+            // Same code can carry different text between releases, so both
+            // have to match for the entries to be one and the same
+            bool merged;
+            if (size_t[] *known = id in *byCode)
+            {
+                foreach (size_t i; *known)
+                {
+                    if (mod.messages[i].message != message)
+                        continue;
+
+                    mod.messages[i].os |= osbit;
+                    merged = true;
+                    break;
+                }
+            }
+            if (merged)
+                continue;
+
             WindowsModuleError error;
-            error.message = jerror["message"].str.idup;
-            error.origId  = jerror["code"].str.idup;
-            if (parseCode(error.origId, error.id) == false)
-                stderr.writeln("warning: parsing code '", error.origId, "' failed");
-            
-            errors ~= error;
+            error.id      = id;
+            error.message = message.idup;
+            error.origId  = origId.idup;
+            error.os      = osbit;
+
+            (*byCode)[id] ~= mod.messages.length;
+            mod.messages ~= error;
         }
-        
-        WindowsModule mod;
-        mod.name        = jmodule["name"].str.idup;
-        mod.description = jmodule["description"].str.idup;
-        mod.messages    = errors;
-        modules ~= mod;
-        modmsgcnt += errors.length;
     }
-    
-    // Sort array
-    // TODO: Find in-place sort
-    scope auto sorted = sort!("a.name < b.name")(modules);
-    foreach (ref WindowsModule winmod; sorted)
-    {
-        data_windows_modules ~= winmod;
-    }
-    modules = null;
-    
-    statistics.windowsModuleCount = data_windows_modules.length;
-    statistics.windowsModuleErrorCount = modmsgcnt;
-    
+
     GC.collect();
     GC.minimize();
+}
+
+private void databaseSortWindowsModules()
+{
+    cache_windows_modules = null;
+    cache_windows_module_errors = null;
+
+    sort!("a.name < b.name")(data_windows_modules);
+
+    size_t modmsgcnt;
+    foreach (ref WindowsModule mod; data_windows_modules)
+        modmsgcnt += mod.messages.length;
+
+    statistics.windowsOSCount = data_windows_releases.length;
+    statistics.windowsModuleCount = data_windows_modules.length;
+    statistics.windowsModuleErrorCount = modmsgcnt;
+
+    GC.collect();
+    GC.minimize();
+}
+
+// Get the OS releases module scans were loaded from, in OS bit order
+WindowsRelease[] databaseWindowsReleases()
+{
+    return data_windows_releases;
 }
 
 // Get all modules
@@ -327,6 +425,7 @@ struct DatabaseStatistics
 {
     size_t crtMessageCount;
     
+    size_t windowsOSCount;
     size_t windowsHeaderCount;
     size_t windowsModuleCount;
     size_t windowsSymbolicCount; // symbolic names + code
@@ -349,7 +448,8 @@ struct SearchResult
     const(char)[] type;     /// symbolic/header/module type string
     const(char)[] origId;   /// original code
     const(char)[] name;     /// header/module name string
-    
+    WindowsOSSet os;        /// releases this message appears in, module results only
+
     // Description
     const(char)[] pre;      /// pre-needle snippet
     const(char)[] needle;   /// needle
@@ -404,6 +504,7 @@ SearchResult[] search(string input)
     bool process(uint refcode, string reforigid, string refdesc,
         string type,    // winmodule, winsymbol, crt)
         string name,    // Name of module, header, or crt
+        WindowsOSSet os = 0,
     )
     {
         bool found;
@@ -439,7 +540,7 @@ SearchResult[] search(string input)
                 posttrunc   = postSnipTruncated(refdesc, input, i);
             }
             
-            results ~= SearchResult(type, reforigid, name,
+            results ~= SearchResult(type, reforigid, name, os,
                  msgpre, msgneedle, msgpost, pretrunc, posttrunc);
         }
         
@@ -453,7 +554,7 @@ SearchResult[] search(string input)
     foreach (ref err; winmodule.messages)
     {
         with (err)
-        if (process(id, origId, message, "windows-module", winmodule.name))
+        if (process(id, origId, message, "windows-module", winmodule.name, err.os))
             return results;
     }
     
@@ -536,6 +637,11 @@ DatabaseStatistics statistics;
 DatabaseCrt[] data_crt;
 WindowsHeader[] data_windows_headers;
 WindowsModule[] data_windows_modules;
+WindowsRelease[] data_windows_releases;
+
+// Load-time only, dropped once every module scan is merged
+size_t[string] cache_windows_modules;      // module name -> data_windows_modules index
+size_t[][uint][] cache_windows_module_errors; // per module, error code -> message indexes
 
 // Cache, to make it easier to search from data
 //WindowsError[string] cache_windows; // Module+Header code merged
