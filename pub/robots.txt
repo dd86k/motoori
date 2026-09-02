@@ -1,6 +1,6 @@
-# The error data should be made available on dd86k.space/pub/
+# The error data should be made available on dd86k.space/pub/eodb.zip
 # Get that instead
 
 User-agent: *
-Disallow: /about
+Disallow: /search
 Crawl-delay: 50
