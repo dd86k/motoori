@@ -439,29 +439,77 @@ void processWindowsHeaders(string outdir, string err_csv_path)
     chdir("..");
 }
 
-// Read list of known MUIs and extract messages from them
-void processWindowsModules(string outdir)
+// Resolve the MUIs to scan, either from the curated list or from everything
+// installed under %windir%. Names are the module filename, without the .mui suffix.
+private Module[] resolveModules(bool all, out string[] paths)
 {
+    if (all == false)
+    {
+        Module[] found;
+        foreach (ref immutable(Module) mod; modules)
+        {
+            string mui = locatemui(mod.name);
+            if (mui is null)
+            {
+                stderr.writeln("warning: module '", mod.name, "' not found");
+                continue;
+            }
+
+            found ~= cast(Module)mod;
+            paths ~= mui;
+        }
+        return found;
+    }
+
+    import std.path : baseName;
+
+    string[string] descriptions;
+    foreach (ref immutable(Module) mod; modules)
+        descriptions[ toLower(mod.name) ] = mod.description;
+
+    // The same module ships under System32 and SysWOW64, keep the first hit
+    Module[] found;
+    bool[string] seen;
+    foreach (string mui; fetchallmui())
+    {
+        string name = baseName(mui)[0..$-".mui".length];
+        string key = toLower(name);
+        if (key in seen)
+            continue;
+        seen[key] = true;
+
+        Module mod;
+        mod.name = name;
+        if (string *desc = key in descriptions)
+            mod.description = *desc;
+
+        found ~= mod;
+        paths ~= mui;
+    }
+    return found;
+}
+
+// Read list of known MUIs and extract messages from them
+void processWindowsModules(string outdir, bool all)
+{
+    OSInfo os = getOSInfo();
+
+    string[] paths;
+    Module[] found = resolveModules(all, paths);
+
     mkchdir(outdir);
     mkchdir("windows");
-    
+
     JSONValue j;
     JSONValue jmodules = JSONValue(JSONValue[].init); // for older D compilers;
-    foreach (ref immutable(Module) mod; modules)
+    foreach (size_t i, ref Module mod; found)
     {
-        string mui = locatemui(mod.name);
-        if (mui is null)
-        {
-            stderr.writeln("warning: module '", mod.name, "' not found");
-            continue;
-        }
-        
         JSONValue jmessages = JSONValue(JSONValue[].init);
         char[32] buf = void;
-        try foreach (ErrorMessage msg; loadmuimsgs(mui))
+        try foreach (ErrorMessage msg; loadmuimsgs(paths[i]))
         {
             JSONValue jmessage;
-            jmessage["code"] = sformat(buf[],"%#x", msg.id);
+            jmessage["code"] = sformat(buf,"%#x", msg.id);
             jmessage["message"] = cleanDescription( cast(string)msg.message );
             jmessages.array ~= jmessage;
         }
@@ -470,18 +518,32 @@ void processWindowsModules(string outdir)
             stderr.writeln("warning: exception with '", mod.name, "': ", ex.msg);
             continue;
         }
-            
+
+        // Most MUIs picked up by --all-modules carry no message table at all
+        if (all && jmessages.array.length == 0)
+            continue;
+
         JSONValue jmodule;
         jmodule["name"] = mod.name;
         jmodule["description"] = mod.description;
         jmodule["messages"] = jmessages;
         jmodules.array ~= jmodule;
     }
+
+    JSONValue jos;
+    jos["key"]   = os.key;
+    jos["name"]  = os.name;
+    jos["build"] = os.build;
+    jos["date"]  = Clock.currTime().toISOExtString();
+
+    j["version"] = 2;
+    j["os"] = jos;
     j["modules"] = jmodules;
-    j["version"] = 1;
-    
-    writefile("modules.json", j.toString());
-    
+
+    string filename = "modules-"~os.key~".json";
+    writefile(filename, j.toString());
+    writeln("wrote ", jmodules.array.length, " modules to ", filename);
+
     chdir("..");
     chdir("..");
 }

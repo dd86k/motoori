@@ -144,7 +144,7 @@ void main(string[] args)
         "locate-mui",   "Windows: Locate MUI module given name", &olocatemui,
         "list-mui",     "Windows: Check availability of all MUI modules", &olistmuis,
         "code",         "Windows: Check if this code exists in MUIs", &ocode,
-        "all-modules",  "Windows: Search for all MUIs and not the common ones", &oall,
+        "all-modules",  "Windows: Search every MUI under %windir% instead of the common ones", &oall,
         //"print-mui",  "Windows: Only print strings of MUI module", &strings,
         //"headerdesc", "Windows: Write header descriptions", &headerDesc,
         );
@@ -203,7 +203,7 @@ void main(string[] args)
         if (ogenflags & GEN_WIN_MOD)
         {
             version (Windows)
-                processWindowsModules(ooutdir);
+                processWindowsModules(ooutdir, oall);
             else
                 throw new Exception("Option --generate-windows-modules is only available on Windows");
         }
