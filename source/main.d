@@ -89,7 +89,8 @@ const(char)[] requestOrigin(ref HTTPRequest req, char[] buffer)
 }
 
 void prepareHeader(ref HTTPReply buffer, ref HTTPRequest req, string title,
-    const(char)[] description, string canonical, ActiveTab tab, string search_query = null)
+    const(char)[] description, string canonical, ActiveTab tab, string search_query = null,
+    bool noindex = false)
 {
     // NOTE: Could have done a Pug/Diet template converter (by line) but lazy
     buffer.put(`<!DOCTYPE html>`);
@@ -97,6 +98,8 @@ void prepareHeader(ref HTTPReply buffer, ref HTTPRequest req, string title,
     buffer.put(`<head>`);
     buffer.put(`<meta charset="utf-8">`);
     buffer.put(`<meta name="viewport" content="width=device-width, initial-scale=1">`);
+    if (noindex)
+        buffer.put(`<meta name="robots" content="noindex">`);
     buffer.put(`<meta property="og:site_name" content="OEDB">`);
     buffer.put(`<meta property="og:type" content="website">`);
     buffer.writef(`<meta property="og:title" content="%s">`, title);
@@ -411,7 +414,7 @@ int main(string[] args)
         {
             HTTPReply buffer = HTTPReply.create(4 * 1024);
 
-            prepareHeader(buffer, req, "OEDB", null, null, ActiveTab.none);
+            prepareHeader(buffer, req, "OEDB", null, null, ActiveTab.none, null, true);
 
             int status = void;
             if (HttpServerException httpex = cast(HttpServerException)ex)
