@@ -189,12 +189,13 @@ WindowsSymbolic databaseWindowsSymbolicByName(string name, ref WindowsHeader hea
 // Windows modules
 //
 
-/// Set of OS releases, one bit per entry of databaseWindowsReleases()
+/// Set of OS releases, tested against WindowsRelease.bit
 alias WindowsOSSet = uint;
 
 /// An OS release a module scan was taken from
 struct WindowsRelease
 {
+    WindowsOSSet bit; /// Bit this release occupies in a set
     string key;   /// Short key, e.g. "11"
     string name;  /// Display name, e.g. "Windows 11"
     string build; /// Build the scan was taken on
@@ -242,6 +243,7 @@ private void databaseLoadWindowsModules(string path)
     if (data_windows_releases.length >= WindowsOSSet.sizeof * 8)
         throw new Exception("Too many OS releases to tag");
     WindowsOSSet osbit = 1 << data_windows_releases.length;
+    release.bit = osbit;
     data_windows_releases ~= release;
 
     // NOTE: Somehow, all the module names are already lowercase
@@ -310,12 +312,39 @@ private void databaseLoadWindowsModules(string path)
     GC.minimize();
 }
 
+// Sort key out of a version string like "10.0.26100.4652". The revision is left
+// out, two scans of the same build would share a key and overwrite each other.
+private ulong versionRank(string build)
+{
+    import std.array : split;
+    import std.conv : to;
+
+    string[] parts = split(build, '.');
+    ulong rank;
+
+    try
+    {
+        if (parts.length >= 1) rank |= cast(ulong)to!ubyte(parts[0]) << 56;
+        if (parts.length >= 2) rank |= cast(ulong)to!ubyte(parts[1]) << 48;
+        if (parts.length >= 3) rank |= to!uint(parts[2]);
+    }
+    catch (Exception) // hand-edited metadata shouldn't stop a load
+    {
+    }
+
+    return rank;
+}
+
 private void databaseSortWindowsModules()
 {
     cache_windows_modules = null;
     cache_windows_module_errors = null;
 
     sort!("a.name < b.name")(data_windows_modules);
+
+    // Scans are loaded in filename order, which puts "modules-7.json" after
+    // "modules-11.json". Releases carry their bit, so this only affects display.
+    sort!((ref a, ref b) => versionRank(a.build) < versionRank(b.build))(data_windows_releases);
 
     size_t modmsgcnt;
     foreach (ref WindowsModule mod; data_windows_modules)
@@ -329,7 +358,7 @@ private void databaseSortWindowsModules()
     GC.minimize();
 }
 
-// Get the OS releases module scans were loaded from, in OS bit order
+// Get the OS releases module scans were loaded from, oldest first
 WindowsRelease[] databaseWindowsReleases()
 {
     return data_windows_releases;

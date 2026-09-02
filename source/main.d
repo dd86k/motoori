@@ -110,9 +110,9 @@ void prepareFooter(ref HTTPReply buffer, string build_date = __DATE__)
 // Write the OS releases an entry was found in, as tags
 void putWindowsOS(ref HTTPReply buffer, WindowsOSSet os)
 {
-    foreach (size_t i, ref WindowsRelease release; databaseWindowsReleases())
+    foreach (ref WindowsRelease release; databaseWindowsReleases())
     {
-        if ((os & (1 << i)) == 0)
+        if ((os & release.bit) == 0)
             continue;
 
         buffer.writef(`<span class="tag is-small" title="%s">%s</span>`, release.name, release.key);
