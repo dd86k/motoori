@@ -19,32 +19,37 @@
 	--surface: #1e2126;
 	--surface-alt: #24282e;
 	--border: #333940;
+	--border-strong: #6d7177;
 	--font-color: #e7e9ec;
-	--muted: #98a0aa;
+	--muted: #b6bdc6;
 	--accent: #5ad48e;
 	--accent-weak: rgba(90, 212, 142, .13);
 	--hover: rgba(255, 255, 255, .045);
 	--shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 4px 16px rgba(0, 0, 0, .28);
-	--color-error: #f08a8a;
+	--color-error: #f29b9b;
+	--warning: #cc0;
 }
 html.light {
 	--bg-color: #f5f5f3;
 	--surface: #ffffff;
 	--surface-alt: #ececeb;
 	--border: #d8d8d3;
+	--border-strong: #888885;
 	--font-color: #16181a;
-	--muted: #61646b;
-	--accent: #14724b;
-	--accent-weak: rgba(20, 114, 75, .10);
+	--muted: #4a4d54;
+	--accent: #0b5537;
+	--accent-weak: rgba(11, 85, 55, .10);
 	--hover: rgba(0, 0, 0, .035);
 	--shadow: 0 1px 2px rgba(16, 18, 20, .06), 0 3px 12px rgba(16, 18, 20, .05);
-	--color-error: #b3261e;
+	--color-error: #97201a;
+	--warning: #8c8c00;
 }
 html.highcontrast {
 	--bg-color: #000000;
 	--surface: #000000;
 	--surface-alt: #000000;
 	--border: #ffffff;
+	--border-strong: #ffffff;
 	--font-color: #ffffff;
 	--muted: #ffffff;
 	--accent: lightgreen;
@@ -52,6 +57,7 @@ html.highcontrast {
 	--hover: #303030;
 	--shadow: none;
 	--color-error: #ff9a9a;
+	--warning: #ff0;
 }
 
 body {
@@ -79,6 +85,15 @@ body {
 	outline-offset: 2px;
 }
 
+/* Chota dims every link to .75 on hover, which drops the muted ones under the
+   contrast floor. Links signal hover by colour or underline instead. */
+nav .brand a:hover:not(.button),
+.content a:hover:not(.button),
+.breadcrumb a:hover:not(.button),
+footer a:hover:not(.button) {
+	opacity: 1;
+}
+
 /* Navigation */
 
 nav {
@@ -93,6 +108,10 @@ nav {
 		position: sticky;
 		top: 0;
 		z-index: 10;
+	}
+	/* Keeps the sticky bar off whatever the keyboard just moved focus to. */
+	html {
+		scroll-padding-top: 7rem;
 	}
 }
 nav ul {
@@ -130,7 +149,7 @@ nav form {
 	align-items: center;
 	margin: auto 0 auto 1rem;
 	padding-left: 1.4rem;
-	border: 1px solid var(--border);
+	border: 1px solid var(--border-strong);
 	border-radius: 999px;
 	background-color: var(--bg-color);
 	transition: border-color .15s ease, box-shadow .15s ease;
@@ -167,7 +186,7 @@ nav button[type=submit]:hover {
 #theme-button {
 	color: var(--muted);
 	background-color: var(--bg-color);
-	border: 1px solid var(--border);
+	border: 1px solid var(--border-strong);
 	border-radius: 50%;
 	padding: 1rem; /* matches Chota's .icon-only, so it lines up with the search pill */
 	margin: auto 0 auto .8rem;
@@ -242,8 +261,13 @@ h2 {
 h3 { font-size: 2.1rem; }
 h1,h2,h3,h4,h5,h6 { word-wrap: anywhere; }
 
+/* 1.4.8 caps a measure at 80 characters, and wants the gap between paragraphs
+   at 1.5x the line spacing — 1.6 here, from Chota's body rule. */
 p, li {
-	max-width: 90ch;
+	max-width: 80ch;
+}
+.content p {
+	margin-bottom: 2.4em;
 }
 
 pre {
@@ -316,7 +340,7 @@ table tfoot td {
    meet it, so the box reads as part of the table rather than as a stray field. */
 .table-filter {
 	margin: 2rem 0 0 0;
-	border: 1px solid var(--border) !important;
+	border: 1px solid var(--border-strong) !important;
 	border-radius: var(--radius) var(--radius) 0 0 !important;
 	padding: .9rem 1.2rem .9rem 4.4rem !important;
 	color: var(--font-color);
@@ -324,8 +348,12 @@ table tfoot td {
 	background-repeat: no-repeat;
 	background-position: 1.4rem center;
 	background-size: 1.8rem;
-	/* stroke is baked in: currentColor does not resolve inside a background-image */
-	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2398a0aa' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolygon points='22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3'%3E%3C/polygon%3E%3C/svg%3E");
+	/* stroke is baked in: currentColor does not resolve inside a background-image,
+	   so each theme needs its own copy to stay above the 3:1 floor */
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23b6bdc6' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolygon points='22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3'%3E%3C/polygon%3E%3C/svg%3E");
+}
+html.light .table-filter {
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%234a4d54' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolygon points='22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3'%3E%3C/polygon%3E%3C/svg%3E");
 }
 .table-filter:focus {
 	border-color: var(--accent) !important;
@@ -437,8 +465,8 @@ a.stat-label:hover {
 .warning {
 	padding: 1.5rem 2rem;
 	margin: 2rem 0;
-	border: 1px solid #cc0;
-	border-left: .4rem solid #cc0;
+	border: 1px solid var(--warning);
+	border-left: .4rem solid var(--warning);
 	border-radius: var(--radius);
 	background-color: rgba(204, 204, 0, .07);
 }
