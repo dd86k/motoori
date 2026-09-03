@@ -5,11 +5,11 @@ import std.format;
 import std.stdio;
 import std.getopt;
 import std.string : toLower, stripRight;
+import utils : collectPeriodically;
 import motoori, database, sitemap, api;
 import extra.windows;
 
 import ddhttpd;
-import core.memory : GC;
 
 static import std.file;
 alias readAll = std.file.read;
@@ -88,6 +88,23 @@ struct ErrorModule
     const(char)[] name;
     const(char)[] message;
     const(char)[] symbolic;
+}
+
+// A reply that outgrows its buffer is realloc'd and copied, and the listing
+// pages run into the megabytes, so they size themselves off the text they are
+// about to write. These cover what surrounds that text.
+
+/// The cells and links around one row's text.
+enum ROW_MARKUP = 128;
+/// Header, prose, and footer around a table.
+enum PAGE_MARKUP = 8 * 1024;
+/// One release tag, as putReleaseTag writes it.
+enum RELEASE_TAG_MARKUP = 80;
+
+/// Budget for a "Found in" cell, which carries up to one tag per release.
+size_t releaseTagsMarkup()
+{
+    return databaseWindowsReleases().length * RELEASE_TAG_MARKUP;
 }
 
 // Inlined in <head> and deliberately not in theme.js: the theme class has to
@@ -564,6 +581,7 @@ int main(string[] args)
             prepareFooter(buffer);
             
             req.reply(200, buffer, "text/html");
+            collectPeriodically();
             return REQUEST_OK;
         })
         .addRoute("GET", "/about", (ref HTTPRequest req)
@@ -652,6 +670,7 @@ int main(string[] args)
             prepareFooter(buffer);
             
             req.reply(200, buffer, "text/html");
+            collectPeriodically();
             return REQUEST_OK;
         })
         .addRoute("GET", "/api", (ref HTTPRequest req)
@@ -925,6 +944,7 @@ int main(string[] args)
             prepareFooter(buffer);
             
             req.reply(200, buffer, "text/html");
+            collectPeriodically();
             return REQUEST_OK;
         })
         //
@@ -956,6 +976,7 @@ int main(string[] args)
             prepareFooter(buffer);
             
             req.reply(200, buffer, "text/html");
+            collectPeriodically();
             return REQUEST_OK;
         })
         .addRoute("GET", "/crt/msvc", (ref HTTPRequest req)
@@ -972,6 +993,7 @@ int main(string[] args)
             prepareFooter(buffer, true);
             
             req.reply(200, buffer, "text/html");
+            collectPeriodically();
             return REQUEST_OK;
         })
         .addRoute("GET", "/crt/gnu", (ref HTTPRequest req)
@@ -988,6 +1010,7 @@ int main(string[] args)
             prepareFooter(buffer, true);
             
             req.reply(200, buffer, "text/html");
+            collectPeriodically();
             return REQUEST_OK;
         })
         .addRoute("GET", "/crt/musl", (ref HTTPRequest req)
@@ -1004,6 +1027,7 @@ int main(string[] args)
             prepareFooter(buffer, true);
             
             req.reply(200, buffer, "text/html");
+            collectPeriodically();
             return REQUEST_OK;
         })
         //
@@ -1065,6 +1089,7 @@ int main(string[] args)
             prepareFooter(buffer);
             
             req.reply(200, buffer, "text/html");
+            collectPeriodically();
             return REQUEST_OK;
         })
         .addRoute("GET", "/windows/error-types", (ref HTTPRequest req)
@@ -1280,12 +1305,20 @@ int main(string[] args)
             prepareFooter(buffer);
             
             req.reply(200, buffer, "text/html");
+            collectPeriodically();
             return REQUEST_OK;
         })
         .addRoute("GET", "/windows/modules", (ref HTTPRequest req)
         {
-            HTTPReply buffer = HTTPReply.create(32 * 1024);
-            
+            WindowsModule[] modulelist = databaseWindowsModules();
+
+            size_t rowmarkup = ROW_MARKUP + releaseTagsMarkup();
+            size_t reserve = PAGE_MARKUP;
+            foreach (ref mod; modulelist)
+                reserve += mod.name.length * 2 + mod.description.length + rowmarkup;
+
+            HTTPReply buffer = HTTPReply.create(reserve);
+
             prepareHeader(buffer, req, "Windows Modules | OEDB",
                 "Windows modules (DLLs and executables) carrying error messages, "~
                 "with the releases each one was found in.",
@@ -1303,7 +1336,6 @@ int main(string[] args)
                 `<p>Some modules listed below may include executable images (.exe files).</p>`
             );
             
-            WindowsModule[] modulelist = databaseWindowsModules();
             putTableFilter(buffer, "modules", "Filter modules");
             buffer.put(
                 `<table class="table" id="modules">`~
@@ -1331,12 +1363,19 @@ int main(string[] args)
             prepareFooter(buffer, true);
 
             req.reply(200, buffer, "text/html");
+            collectPeriodically();
             return REQUEST_OK;
         })
         .addRoute("GET", "/windows/headers", (ref HTTPRequest req)
         {
-            HTTPReply buffer = HTTPReply.create(32 * 1024);
-            
+            WindowsHeader[] winheaders = databaseWindowsHeaders();
+
+            size_t reserve = PAGE_MARKUP;
+            foreach (ref hdr; winheaders)
+                reserve += hdr.name.length + hdr.key.length + hdr.description.length + ROW_MARKUP;
+
+            HTTPReply buffer = HTTPReply.create(reserve);
+
             prepareHeader(buffer, req, "Windows Headers | OEDB",
                 "Windows header files defining error codes and their symbolic names.",
                 "/windows/headers", ActiveTab.windows);
@@ -1358,7 +1397,6 @@ int main(string[] args)
             );
             buffer.put(`<p>A list of headers can be found below.</p>`);
             
-            WindowsHeader[] winheaders = databaseWindowsHeaders();
             putTableFilter(buffer, "headers", "Filter headers");
             buffer.put(`<table class="table" id="headers">`);
             buffer.put(`<thead><tr><th>Name</th><th>Abstract</th></tr></thead>`);
@@ -1381,6 +1419,7 @@ int main(string[] args)
             prepareFooter(buffer, true);
 
             req.reply(200, buffer, "text/html");
+            collectPeriodically();
             return REQUEST_OK;
         })
         .addRoute("GET", "/search", (ref HTTPRequest req)
@@ -1487,7 +1526,7 @@ int main(string[] args)
             prepareFooter(buffer);
 
             req.reply(200, buffer, "text/html");
-            GC.collect();
+            collectPeriodically();
             return REQUEST_OK;
         })
         .addRoute("GET", "/windows/header/:header", (ref HTTPRequest req)
@@ -1499,9 +1538,14 @@ int main(string[] args)
             WindowsHeader winheader = databaseWindowsHeader( header );
             if (winheader.name == string.init)
                 throw new HttpServerException(HTTPStatus.notFound, HTTPMsg.notFound, req);
-            
-            HTTPReply buffer = HTTPReply.create(8 * 1024);
-            
+
+            size_t reserve = PAGE_MARKUP + winheader.description.length;
+            foreach (ref sym; winheader.symbolics)
+                reserve += sym.name.length + sym.key.length + sym.origId.length +
+                    sym.message.length + ROW_MARKUP;
+
+            HTTPReply buffer = HTTPReply.create(reserve);
+
             char[256] descbuf = void;
             const(char)[] description = winheader.description.length ?
                 winheader.description :
@@ -1551,6 +1595,7 @@ int main(string[] args)
             prepareFooter(buffer, true);
 
             req.reply(200, buffer, "text/html");
+            collectPeriodically();
             return REQUEST_OK;
         })
         .addRoute("GET", "/windows/module/:module", (ref HTTPRequest req)
@@ -1562,9 +1607,14 @@ int main(string[] args)
             WindowsModule mod = databaseWindowsModule(module_);
             if (mod.name == string.init)
                 throw new HttpServerException(HTTPStatus.notFound, HTTPMsg.notFound, req);
-            
-            HTTPReply buffer = HTTPReply.create(8 * 1024);
-            
+
+            size_t rowmarkup = ROW_MARKUP + releaseTagsMarkup();
+            size_t reserve = PAGE_MARKUP + mod.description.length;
+            foreach (ref err; mod.messages)
+                reserve += err.message.length + rowmarkup;
+
+            HTTPReply buffer = HTTPReply.create(reserve);
+
             char[256] descbuf = void;
             const(char)[] description = mod.description.length ?
                 mod.description :
@@ -1616,6 +1666,7 @@ int main(string[] args)
             prepareFooter(buffer, true);
 
             req.reply(200, buffer, "text/html");
+            collectPeriodically();
             return REQUEST_OK;
         })
         .addRoute("GET", "/windows/code/:code", (ref HTTPRequest req)
@@ -1635,9 +1686,17 @@ int main(string[] args)
             // "Proper" code as if MS would print it I guess
             char[32] formalbuf = void;
             string formal = cast(string)sformat(formalbuf[], "0x%08x", code);
-            
-            HTTPReply buffer = HTTPReply.create(16 * 1024);
-            
+
+            size_t rowmarkup = ROW_MARKUP + releaseTagsMarkup();
+            size_t reserve = PAGE_MARKUP;
+            foreach (ref result; results_modules)
+                reserve += result.module_.name.length + result.error.message.length + rowmarkup;
+            foreach (ref result; results_headers)
+                reserve += result.header.name.length + result.error.name.length +
+                    result.error.message.length + ROW_MARKUP;
+
+            HTTPReply buffer = HTTPReply.create(reserve);
+
             // Counts rather than one of the messages: a bare code means different
             // things in every subsystem that returns it, so quoting the first
             // match would assert a meaning the page itself does not.
@@ -1729,7 +1788,7 @@ int main(string[] args)
             prepareFooter(buffer, filter_mods || filter_headers);
 
             req.reply(200, buffer, "text/html");
-            GC.collect();
+            collectPeriodically();
             return REQUEST_OK;
         })
         .addRoute("GET", "/windows/error/:symbol", (ref HTTPRequest req)
@@ -1750,9 +1809,14 @@ int main(string[] args)
             
             // Associated modules
             SearchWindowsModuleResult[] modules = searchWindowsModulesByCode(winsymbol.id);
-            
-            HTTPReply buffer = HTTPReply.create(16 * 1024);
-            
+
+            size_t rowmarkup = ROW_MARKUP + releaseTagsMarkup();
+            size_t reserve = PAGE_MARKUP + winsymbol.message.length;
+            foreach (ref mod; modules)
+                reserve += mod.module_.name.length + mod.error.message.length + rowmarkup;
+
+            HTTPReply buffer = HTTPReply.create(reserve);
+
             char[512] descbuf = void;
             const(char)[] description = winsymbol.message.length ?
                 sformat(descbuf, "%s (%s): %s",
@@ -1827,7 +1891,7 @@ int main(string[] args)
             prepareFooter(buffer);
 
             req.reply(200, buffer, "text/html");
-            GC.collect();
+            collectPeriodically();
             return REQUEST_OK;
         })
         //

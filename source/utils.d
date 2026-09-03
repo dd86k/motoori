@@ -129,6 +129,156 @@ unittest
     assert(toLowerBuf(tiny, "FOUR") == "four");
 }
 
+/// Case-insensitive ASCII substring search, for a needle already lowercased.
+///
+/// std.string.indexOf with CaseSensitive.no decodes and folds per code point,
+/// which is far too much work to repeat over every message in the database.
+/// Folding ASCII only also keeps a match exactly as long as the needle, which
+/// is what the snippet slicing around the search already assumes.
+ptrdiff_t indexOfFold(const(char)[] text, const(char)[] needle)
+{
+    import core.bitop : bsf;
+
+    if (needle.length == 0 || needle.length > text.length)
+        return -1;
+
+    // Positions worth a full compare are found eight bytes at a time. Case
+    // differs by bit 5 alone, so OR-ing that bit in makes both cases of the
+    // needle's first character compare equal; a first character that is not a
+    // letter leaves the bit alone and the compare stays exact.
+    immutable char first = needle[0];
+    immutable ulong fold = first >= 'a' && first <= 'z' ? 0x2020_2020_2020_2020 : 0;
+    immutable ulong wanted = 0x0101_0101_0101_0101 * cast(ubyte)first;
+    immutable size_t last = text.length - needle.length;
+
+    size_t i;
+    while (i <= last)
+    {
+        bool wide;
+        version (LittleEndian) wide = i + ulong.sizeof <= text.length;
+
+        if (wide)
+        {
+            ulong word = *cast(const(ulong)*)(text.ptr + i) | fold;
+            // The has-a-zero-byte test, applied to the difference from the needle
+            ulong diff = word ^ wanted;
+            ulong hits = (diff - 0x0101_0101_0101_0101) & ~diff & 0x8080_8080_8080_8080;
+            if (hits == 0)
+            {
+                i += ulong.sizeof;
+                continue;
+            }
+
+            i += bsf(hits) / 8;
+            if (i > last)
+                return -1;
+        }
+        else if ((text[i] | cast(char)fold) != first)
+        {
+            ++i;
+            continue;
+        }
+
+        size_t k = 1;
+        for (; k < needle.length; ++k)
+        {
+            char c = text[i + k];
+            if (c >= 'A' && c <= 'Z')
+                c += 32;
+            if (c != needle[k])
+                break;
+        }
+        if (k == needle.length)
+            return i;
+
+        ++i;
+    }
+
+    return -1;
+}
+unittest
+{
+    assert(indexOfFold("Access is denied.", "denied") == 10);
+    assert(indexOfFold("ACCESS IS DENIED.", "denied") == 10);
+    assert(indexOfFold("access", "access") == 0);
+    assert(indexOfFold("Access", "s") == 4);
+    assert(indexOfFold("aAbB", "ab") == 1); // false start on the first 'a'
+    assert(indexOfFold("Access is denied.", "granted") < 0);
+    assert(indexOfFold("short", "much longer needle") < 0);
+    assert(indexOfFold("anything", "") < 0);
+    assert(indexOfFold("", "x") < 0);
+
+    // Only ASCII folds, so a match is always as long as the needle
+    assert(indexOfFold("café", "café") == 0);
+    assert(indexOfFold("CAFÉ", "caf") == 0);
+
+    // The wide scan reads eight bytes at a time and has to agree with a plain
+    // one everywhere, in particular around the tail it cannot cover
+    static ptrdiff_t reference(const(char)[] text, const(char)[] needle)
+    {
+        if (needle.length == 0 || needle.length > text.length)
+            return -1;
+        foreach (i; 0 .. text.length - needle.length + 1)
+        {
+            size_t k;
+            for (; k < needle.length; ++k)
+            {
+                char c = text[i + k];
+                if (c >= 'A' && c <= 'Z')
+                    c += 32;
+                if (c != needle[k])
+                    break;
+            }
+            if (k == needle.length)
+                return i;
+        }
+        return -1;
+    }
+
+    static immutable string alphabet = "aAbB%1 \xff";
+    char[24] textbuf = void;
+    char[4] needlebuf = void;
+    uint state = 12345;
+    foreach (round; 0 .. 40_000)
+    {
+        static uint next(ref uint s) { s = s * 1103515245 + 12345; return s >> 16; }
+
+        size_t textlen = next(state) % textbuf.length;
+        size_t needlelen = 1 + next(state) % needlebuf.length;
+        foreach (ref char c; textbuf[0..textlen])
+            c = alphabet[next(state) % alphabet.length];
+        foreach (ref char c; needlebuf[0..needlelen])
+            c = alphabet[next(state) % alphabet.length];
+
+        const(char)[] text = textbuf[0..textlen];
+        const(char)[] needle = toLowerBuf(needlebuf[0..needlelen], needlebuf[0..needlelen]);
+        assert(indexOfFold(text, needle) == reference(text, needle));
+    }
+}
+
+/// Sweep the request garbage, every so often.
+///
+/// Collecting per request costs more than rendering most pages does, and a
+/// request only leaves about a kilobyte behind, so the sweep only has to keep
+/// up with that. Left to itself the collector would let the heap climb to twice
+/// the live set before acting, which on this database is tens of megabytes of
+/// resident memory spent on nothing.
+void collectPeriodically()
+{
+    import core.memory : GC;
+
+    enum size_t COLLECT_INTERVAL = 512;
+
+    // Per thread, so the increment needs no atomics: the collection it triggers
+    // is process-wide either way, and counting separately only sweeps sooner.
+    static size_t requests;
+    if (++requests < COLLECT_INTERVAL)
+        return;
+
+    requests = 0;
+    GC.collect();
+}
+
 pragma(inline, true)
 string plural(size_t count, string single, string multi)
 {

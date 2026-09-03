@@ -2,14 +2,14 @@ module database;
 
 import core.memory : GC;
 import std.stdio;
-import std.conv;
 import std.file;
-import std.json;
 import std.path;
-import std.string : toLower, indexOf;
+import std.format : sformat;
+import std.string : toLower;
 import std.algorithm.sorting : sort;
 import std.datetime.systime : SysTime;
-import utils : parseCode;
+import jsonpull : JSONReader;
+import utils : parseCode, toLowerBuf, indexOfFold;
 
 private alias readFile = std.file.read;
 
@@ -19,20 +19,97 @@ private alias readFile = std.file.read;
 //       usage is strongly for searching purposes, and these can be found in
 //       the caches found later.
 
-// NOTE: Duplicate strings when loading from JSON
 //
-//       Duplicating strings puts it as its own root reference, to let the GC
-//       clean the JSONValue references afterwards.
+// String arena
+//
+// NOTE: Why the loaders do not hand each string to the GC
+//
+//       Strings read out of a document outlive it, and there is close to a
+//       million of them. Allocated one by one they end up scattered across
+//       pools, and a pool with even one live object in it can never be returned
+//       to the OS, so every transient allocation the load makes gets pinned
+//       behind them. Bump-allocating out of dedicated blocks keeps the durable
+//       data in pools of its own.
+
+private enum ARENA_BLOCK = 4 * 1024 * 1024;
+
+private __gshared char[] arena_block;
+private __gshared size_t arena_used;
+
+/// Copy a string into the arena. Blocks are never freed, so only call this for
+/// data that lives as long as the process.
+private string arenaDup(const(char)[] str)
+{
+    if (str.length == 0)
+        return null;
+
+    // An outlier would waste most of a block, and is rare enough to hand over
+    if (str.length > ARENA_BLOCK / 4)
+        return str.idup;
+
+    if (arena_used + str.length > arena_block.length)
+    {
+        arena_block = (cast(char*)GC.malloc(ARENA_BLOCK, GC.BlkAttr.NO_SCAN))[0..ARENA_BLOCK];
+        arena_used = 0;
+    }
+
+    char[] dest = arena_block[arena_used .. arena_used + str.length];
+    dest[] = str[];
+    arena_used += str.length;
+    return cast(string)dest;
+}
+
+/// ASCII-lowercased copy of a string, into the arena.
+private string arenaLower(const(char)[] str)
+{
+    string dest = arenaDup(str);
+    foreach (ref char c; cast(char[])dest)
+    {
+        if (c >= 'A' && c <= 'Z')
+            c += 32;
+    }
+    return dest;
+}
+
+/// Decimal form of a code, into the arena.
+private string arenaText(T)(T value)
+{
+    char[32] buf = void;
+    return arenaDup(sformat(buf, "%d", value));
+}
+
+// A read only holds until the next one, and a module message that turns out to
+// be a duplicate of one an earlier scan already carries must not have cost the
+// arena anything, so the merge check runs against these instead.
+private __gshared char[] scratch_name;
+private __gshared char[] scratch_code;
+private __gshared char[] scratch_message;
+
+private const(char)[] hold(ref char[] buffer, const(char)[] str)
+{
+    if (buffer.length < str.length)
+        buffer.length = str.length;
+
+    buffer[0..str.length] = str[];
+    return buffer[0..str.length];
+}
 
 // For database loader only
-private JSONValue readJSON(string path)
+private const(char)[] readSource(string path)
 {
     SysTime mtime = timeLastModified(path);
     if (mtime > data_timestamp)
         data_timestamp = mtime;
 
-    // parseJSON already does text encoding enforcement
-    return parseJSON(cast(string)readFile(path));
+    return cast(const(char)[])readFile(path);
+}
+
+// The reader only ever hands out copies, so the document can go the moment its
+// walk is done. Waiting for a collection instead would mean holding every scan
+// read so far, tens of megabytes of it, for the whole load.
+private void releaseSource(const(char)[] source)
+{
+    GC.free(cast(void*)source.ptr);
 }
 
 /// Load data from base folder
@@ -99,51 +176,87 @@ struct WindowsHeader
 
 private void databaseLoadWindowsHeaders(string path)
 {
-    // Open, read, and parse as JSON
-    scope JSONValue j = readJSON(path);
-    
+    const(char)[] source = readSource(path);
+    scope(exit) releaseSource(source);
+    JSONReader reader = JSONReader(source);
+
     size_t totalSymbolic;
-    scope WindowsHeader[] winheaders;
-    foreach (ref JSONValue jheader; j["headers"].array)
+    const(char)[] key = void;
+
+    reader.enterObject();
+    while (reader.readKey(key))
     {
-        WindowsHeader winheader;
-        winheader.name        = jheader["name"].str.idup;
-        winheader.key         = toLower(winheader.name);
-        winheader.description = jheader["description"].str.idup;
-        
-        foreach (ref JSONValue jsym; jheader["symbolics"].array)
+        if (key != "headers")
         {
-            WindowsSymbolic sym;
-            sym.name    = jsym["name"].str.idup;
-            sym.key     = toLower(sym.name);
-            sym.message = jsym["description"].str.idup;
-            sym.origId  = jsym["id"].str.idup;
-            if (parseCode(sym.origId, sym.id) == false)
-                stderr.writeln("warning: parsing code '", sym.origId, "' failed");
-            sym.decId   = text(sym.id);
-            
-            winheader.symbolics ~= sym;
+            reader.skipValue();
+            continue;
         }
-        
-        totalSymbolic += winheader.symbolics.length;
-        winheaders ~= winheader;
+
+        reader.enterArray();
+        while (reader.nextElement())
+        {
+            WindowsHeader winheader;
+            reader.enterObject();
+            while (reader.readKey(key))
+            {
+                switch (key) {
+                case "name":
+                    winheader.name = arenaDup(reader.readString());
+                    winheader.key  = arenaLower(winheader.name);
+                    break;
+                case "description":
+                    winheader.description = arenaDup(reader.readString());
+                    break;
+                case "symbolics":
+                    reader.enterArray();
+                    while (reader.nextElement())
+                        winheader.symbolics ~= readSymbolic(reader);
+                    break;
+                default:
+                    reader.skipValue();
+                }
+            }
+
+            totalSymbolic += winheader.symbolics.length;
+            data_windows_headers ~= winheader;
+        }
     }
-    
-    // Sort array
-    // TODO: Find in-place sort
-    // returns: SortedRange!(string[], "a < b", SortedRangeOptions.assumeSorted);
-    scope auto sorted = sort!("a.key < b.key")(winheaders);
-    foreach (ref WindowsHeader winheader; sorted)
-    {
-        data_windows_headers ~= winheader;
-    }
-    winheaders = null;
-    
+
+    sort!("a.key < b.key")(data_windows_headers);
+
     statistics.windowsHeaderCount = data_windows_headers.length;
     statistics.windowsSymbolicCount = totalSymbolic;
-    
-    GC.collect();
-    GC.minimize();
+}
+
+private WindowsSymbolic readSymbolic(ref JSONReader reader)
+{
+    WindowsSymbolic sym;
+    const(char)[] key = void;
+
+    reader.enterObject();
+    while (reader.readKey(key))
+    {
+        switch (key) {
+        case "name":
+            sym.name = arenaDup(reader.readString());
+            sym.key  = arenaLower(sym.name);
+            break;
+        case "description":
+            sym.message = arenaDup(reader.readString());
+            break;
+        case "id":
+            sym.origId = arenaDup(reader.readString());
+            break;
+        default:
+            reader.skipValue();
+        }
+    }
+
+    if (parseCode(sym.origId, sym.id) == false)
+        stderr.writeln("warning: parsing code '", sym.origId, "' failed");
+    sym.decId = arenaText(sym.id);
+
+    return sym;
 }
 
 // Get a list of Windows headers
@@ -155,7 +268,8 @@ WindowsHeader[] databaseWindowsHeaders()
 // Get header by its name
 WindowsHeader databaseWindowsHeader(string name)
 {
-    string key = toLower(name);
+    char[256] keybuf = void;
+    const(char)[] key = toLowerBuf(keybuf, name);
     
     foreach (ref WindowsHeader winheader; data_windows_headers)
     {
@@ -172,7 +286,8 @@ WindowsSymbolic databaseWindowsSymbolicByName(string name, ref WindowsHeader hea
     static immutable WindowsHeader emptyhdr;
     static immutable WindowsSymbolic emptysym;
     
-    string key = toLower(name);
+    char[256] keybuf = void;
+    const(char)[] key = toLowerBuf(keybuf, name);
     
     foreach (ref WindowsHeader winheader; data_windows_headers)
     {
@@ -232,91 +347,166 @@ struct WindowsModule
 //       rows, and the shared message strings are only stored once.
 private void databaseLoadWindowsModules(string path)
 {
-    // Open, read, and parse as JSON
-    scope JSONValue j = readJSON(path);
-
-    WindowsRelease release;
-    if (const(JSONValue) *jos = "os" in j)
-    {
-        release.key   = jos.object["key"].str.idup;
-        release.name  = jos.object["name"].str.idup;
-        release.build = jos.object["build"].str.idup;
-    }
-    else // pre-v2 scan, no OS metadata to go on
-    {
-        release.key = release.name = baseName(stripExtension(path));
-    }
-
     if (data_windows_releases.length >= WindowsOSSet.sizeof * 8)
         throw new Exception("Too many OS releases to tag");
+
+    const(char)[] source = readSource(path);
+    scope(exit) releaseSource(source);
+    JSONReader reader = JSONReader(source);
+
+    // The bit only depends on how many scans came before, so it does not have
+    // to wait on the "os" object, which some scans put after the modules
     WindowsOSSet osbit = 1 << data_windows_releases.length;
+    WindowsRelease release;
     release.bit = osbit;
-    data_windows_releases ~= release;
 
-    // NOTE: Somehow, all the module names are already lowercase
-    foreach (jmodule; j["modules"].array)
+    const(char)[] key = void;
+    reader.enterObject();
+    while (reader.readKey(key))
     {
-        string name = jmodule["name"].str;
-
-        size_t modindex = void;
-        if (size_t *existing = name in cache_windows_modules)
-        {
-            modindex = *existing;
-        }
-        else
-        {
-            modindex = data_windows_modules.length;
-            data_windows_modules ~= WindowsModule(name.idup);
-            cache_windows_module_errors.length = data_windows_modules.length;
-            cache_windows_modules[ data_windows_modules[modindex].name ] = modindex;
-        }
-
-        WindowsModule *mod = &data_windows_modules[modindex];
-        mod.os |= osbit;
-        if (mod.description.length == 0) // --all-modules finds modules we have no blurb for
-            mod.description = jmodule["description"].str.idup;
-
-        size_t[][uint] *byCode = &cache_windows_module_errors[modindex];
-        foreach (ref JSONValue jerror; jmodule["messages"].array)
-        {
-            string origId  = jerror["code"].str;
-            string message = jerror["message"].str;
-
-            uint id = void;
-            if (parseCode(origId, id) == false)
-                stderr.writeln("warning: parsing code '", origId, "' failed");
-
-            // Same code can carry different text between releases, so both
-            // have to match for the entries to be one and the same
-            bool merged;
-            if (size_t[] *known = id in *byCode)
-            {
-                foreach (size_t i; *known)
-                {
-                    if (mod.messages[i].message != message)
-                        continue;
-
-                    mod.messages[i].os |= osbit;
-                    merged = true;
-                    break;
-                }
-            }
-            if (merged)
-                continue;
-
-            WindowsModuleError error;
-            error.id      = id;
-            error.message = message.idup;
-            error.origId  = origId.idup;
-            error.os      = osbit;
-
-            (*byCode)[id] ~= mod.messages.length;
-            mod.messages ~= error;
+        switch (key) {
+        case "os":
+            readRelease(reader, release);
+            break;
+        case "modules":
+            reader.enterArray();
+            while (reader.nextElement())
+                readModule(reader, osbit);
+            break;
+        default:
+            reader.skipValue();
         }
     }
 
-    GC.collect();
-    GC.minimize();
+    if (release.key.length == 0) // pre-v2 scan, no OS metadata to go on
+        release.key = release.name = baseName(stripExtension(path));
+
+    data_windows_releases ~= release;
+}
+
+private void readRelease(ref JSONReader reader, ref WindowsRelease release)
+{
+    const(char)[] key = void;
+
+    reader.enterObject();
+    while (reader.readKey(key))
+    {
+        switch (key) {
+        case "key":   release.key   = arenaDup(reader.readString()); break;
+        case "name":  release.name  = arenaDup(reader.readString()); break;
+        case "build": release.build = arenaDup(reader.readString()); break;
+        default:      reader.skipValue();
+        }
+    }
+}
+
+// NOTE: Somehow, all the module names are already lowercase
+private void readModule(ref JSONReader reader, WindowsOSSet osbit)
+{
+    const(char)[] key = void;
+
+    // The scans write their fields in alphabetical order, which puts "name"
+    // behind the messages that need the module resolved first, so it gets
+    // picked out in a pass of its own. Skipping is a plain byte scan and costs
+    // far less than buffering a module's messages until the name shows up.
+    size_t start = reader.tell();
+    const(char)[] name;
+    reader.enterObject();
+    while (reader.readKey(key))
+    {
+        if (key == "name")
+        {
+            name = hold(scratch_name, reader.readString());
+            break;
+        }
+        reader.skipValue();
+    }
+    if (name.length == 0)
+        throw new Exception("Module entry carries no name");
+    reader.seek(start);
+
+    size_t modindex = void;
+    if (size_t *existing = name in cache_windows_modules)
+    {
+        modindex = *existing;
+    }
+    else
+    {
+        modindex = data_windows_modules.length;
+        data_windows_modules ~= WindowsModule(arenaDup(name));
+        cache_windows_module_errors.length = data_windows_modules.length;
+        cache_windows_modules[ data_windows_modules[modindex].name ] = modindex;
+    }
+
+    WindowsModule *mod = &data_windows_modules[modindex];
+    mod.os |= osbit;
+    size_t[][uint] *byCode = &cache_windows_module_errors[modindex];
+
+    reader.enterObject();
+    while (reader.readKey(key))
+    {
+        switch (key) {
+        case "description":
+            // --all-modules finds modules we have no blurb for
+            if (mod.description.length == 0)
+                mod.description = arenaDup(reader.readString());
+            else
+                reader.skipValue();
+            break;
+        case "messages":
+            reader.enterArray();
+            while (reader.nextElement())
+                readModuleError(reader, mod, byCode, osbit);
+            break;
+        default:
+            reader.skipValue();
+        }
+    }
+}
+
+private void readModuleError(ref JSONReader reader, WindowsModule *mod,
+    size_t[][uint] *byCode, WindowsOSSet osbit)
+{
+    const(char)[] key = void;
+    const(char)[] origId;
+    const(char)[] message;
+
+    reader.enterObject();
+    while (reader.readKey(key))
+    {
+        switch (key) {
+        case "code":    origId  = hold(scratch_code, reader.readString());    break;
+        case "message": message = hold(scratch_message, reader.readString()); break;
+        default:        reader.skipValue();
+        }
+    }
+
+    uint id = void;
+    if (parseCode(origId, id) == false)
+        stderr.writeln("warning: parsing code '", origId, "' failed");
+
+    // Same code can carry different text between releases, so both have to
+    // match for the entries to be one and the same
+    if (size_t[] *known = id in *byCode)
+    {
+        foreach (size_t i; *known)
+        {
+            if (mod.messages[i].message != message)
+                continue;
+
+            mod.messages[i].os |= osbit;
+            return;
+        }
+    }
+
+    WindowsModuleError error;
+    error.id      = id;
+    error.message = arenaDup(message);
+    error.origId  = arenaDup(origId);
+    error.os      = osbit;
+
+    (*byCode)[id] ~= mod.messages.length;
+    mod.messages ~= error;
 }
 
 // Sort key out of a version string like "10.0.26100.4652". The revision is left
@@ -433,27 +623,55 @@ struct DatabaseCrt
 
 private void databaseLoadCrt(string path)
 {
-    // Open, read, and parse as JSON
-    scope JSONValue j = readJSON(path);
-    
-    // Buildup the entry
-    // All these entries are mandatory, so crash if it's missing
+    const(char)[] source = readSource(path);
+    scope(exit) releaseSource(source);
+    JSONReader reader = JSONReader(source);
+
     DatabaseCrt crt;
-    crt.name = j["name"].str.idup;
-    crt.full = j["full"].str.idup;
-    crt.arch = j["arch"].str.idup;
-    foreach (jmsg; j["messages"].array)
+    const(char)[] key = void;
+
+    reader.enterObject();
+    while (reader.readKey(key))
     {
-        DatabaseCrtMessage msg = void;
-        msg.code = cast(int)jmsg["code"].integer;
-        msg.origId  = text(msg.code);
-        msg.message = jmsg["message"].str.idup;
-        crt.messages ~= msg;
+        switch (key) {
+        case "name": crt.name = arenaDup(reader.readString()); break;
+        case "full": crt.full = arenaDup(reader.readString()); break;
+        case "arch": crt.arch = arenaDup(reader.readString()); break;
+        case "messages":
+            reader.enterArray();
+            while (reader.nextElement())
+                crt.messages ~= readCrtMessage(reader);
+            break;
+        default:
+            reader.skipValue();
+        }
     }
-    
-    // Add it to the list
+
+    // All of these are mandatory, so refuse a file that came out half-written
+    if (crt.name.length == 0 || crt.full.length == 0 || crt.arch.length == 0)
+        throw new Exception("Missing name, full, or arch in '"~path~"'");
+
     data_crt ~= crt;
     statistics.crtMessageCount += crt.messages.length;
+}
+
+private DatabaseCrtMessage readCrtMessage(ref JSONReader reader)
+{
+    DatabaseCrtMessage msg;
+    const(char)[] key = void;
+
+    reader.enterObject();
+    while (reader.readKey(key))
+    {
+        switch (key) {
+        case "code":    msg.code    = cast(int)reader.readInteger();  break;
+        case "message": msg.message = arenaDup(reader.readString());  break;
+        default:        reader.skipValue();
+        }
+    }
+
+    msg.origId = arenaText(msg.code);
+    return msg;
 }
 
 // List everything
@@ -553,17 +771,34 @@ size_t searchLimit()
     return SEARCH_LIMIT;
 }
 
+/// Search every message for a code or a piece of text.
+///
+/// The result is only good until this thread searches again: the buffer behind
+/// it is reused, since a fresh one per request is a few kilobytes of garbage
+/// that adds up to a collection of the whole database several times an hour.
 SearchResult[] search(string input)
 {
     uint code = void;
     bool iscode = parseCode(input, code);
-    
-    SearchResult[] results;
+
+    static SearchResult[] results;
+    results.length = 0;
+    results.assumeSafeAppend();
     results.reserve(SEARCH_LIMIT);
-    
+
     if (input.length == 0)
         return results;
-    
+
+    // Folded once here: every message in the database gets compared against it
+    char[256] needlebuf = void;
+    const(char)[] needle;
+    if (iscode == false)
+    {
+        needle = toLowerBuf(needlebuf, input);
+        if (needle is null) // query longer than the buffer, rare enough to allocate for
+            needle = toLower(input);
+    }
+
     // Take reference code/message reference and compare it with
     // local code/input
     bool process(uint refcode, string reforigid, string refdesc,
@@ -574,37 +809,37 @@ SearchResult[] search(string input)
     {
         bool found;
         ptrdiff_t i = void;
-        
+
         if (iscode)
         {
             found = code == refcode;
         }
         else if (refdesc) // Typically descriptions of windows modules/headers
         {
-            i = indexOf(refdesc, input, CaseSensitive.no);
+            i = indexOfFold(refdesc, needle);
             if (i < 0)
                 return false;
-            
+
             found = true;
         }
         else return false; // Nothing we can do
-        
+
         if (found)
         {
             const(char)[] msgpre;
             const(char)[] msgneedle;
             const(char)[] msgpost;
-            
+
             bool pretrunc, posttrunc;
             if (iscode == false)
             {
-                msgpre      = preSnip(refdesc, input, i);
-                pretrunc    = preSnipTruncated(refdesc, input, i);
-                msgneedle   = needleSnip(refdesc, input, i);
-                msgpost     = postSnip(refdesc, input, i);
-                posttrunc   = postSnipTruncated(refdesc, input, i);
+                msgpre      = preSnip(refdesc, needle, i);
+                pretrunc    = preSnipTruncated(refdesc, needle, i);
+                msgneedle   = needleSnip(refdesc, needle, i);
+                msgpost     = postSnip(refdesc, needle, i);
+                posttrunc   = postSnipTruncated(refdesc, needle, i);
             }
-            
+
             results ~= SearchResult(type, reforigid, name, os,
                  msgpre, msgneedle, msgpost, pretrunc, posttrunc);
         }
@@ -651,10 +886,12 @@ struct SearchWindowsModuleResult
     WindowsModuleError error;
 }
 
-// Get associated modules by error code
+/// Get associated modules by error code. Reused buffer, see search().
 SearchWindowsModuleResult[] searchWindowsModulesByCode(uint errcode)
 {
-    SearchWindowsModuleResult[] results;
+    static SearchWindowsModuleResult[] results;
+    results.length = 0;
+    results.assumeSafeAppend();
     results.reserve(16);
     foreach (ref module_; data_windows_modules)
     {
@@ -675,10 +912,12 @@ struct SearchWindowsHeaderResult
     WindowsSymbolic error;
 }
 
-// Get associated headers by error code
+/// Get associated headers by error code. Reused buffer, see search().
 SearchWindowsHeaderResult[] searchWindowsHeadersByCode(uint errcode)
 {
-    SearchWindowsHeaderResult[] results;
+    static SearchWindowsHeaderResult[] results;
+    results.length = 0;
+    results.assumeSafeAppend();
     results.reserve(16);
     foreach (ref header; data_windows_headers)
     {

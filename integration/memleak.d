@@ -61,6 +61,11 @@ int main()
     enum ushort PORT = 8999 + 10; // Use offset port to avoid clashing with a running instance
     enum string BASE = "http://127.0.0.1:" ~ PORT.text;
     enum int WARMUP_REQUESTS = 50;
+    // A route serving a reply of a few hundred KiB makes malloc raise its mmap
+    // threshold and start serving those out of the arena, which costs a couple
+    // of MiB of RSS once and never again. Enough warm-up to settle that, or the
+    // baseline gets taken mid-climb and reads as a leak.
+    enum int WARMUP_PER_ROUTE = 250;
     enum int REQUESTS_PER_ROUTE = 2000;
     enum long MAX_RSS_GROWTH_KIB = 512;
 
@@ -136,7 +141,7 @@ int main()
         string url = BASE ~ route;
 
         // Per-route warm-up
-        foreach (_; 0 .. 10)
+        foreach (_; 0 .. WARMUP_PER_ROUTE)
             httpGet(url);
         Thread.sleep(dur!"seconds"(1));
 

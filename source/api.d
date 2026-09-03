@@ -9,12 +9,11 @@ module api;
 import std.conv : text;
 import std.datetime.systime : SysTime;
 import std.functional : toDelegate;
-import core.memory : GC;
 import core.time : Duration;
 import database;
 import extra.windows;
 import motoori : PROJECT_VERSION;
-import utils : parseCode, sformatWindowsCodeURL;
+import utils : parseCode, sformatWindowsCodeURL, collectPeriodically;
 import ddhttpd;
 
 private:
@@ -23,6 +22,12 @@ enum string API_PREFIX = "/api/";
 
 // Data only changes when a scan is loaded, which needs a restart anyway.
 enum const(char) *API_CACHE_CONTROL = "public, max-age=3600";
+
+// A reply that outgrows its buffer is realloc'd and copied, and the listings
+// run into the megabytes, so they size themselves off the text they will hold.
+// This covers what surrounds that text in one entry: the field names, the
+// quoting, the code forms, and the release list.
+enum ENTRY_OVERHEAD = 192;
 
 //
 // JSON writing
@@ -173,6 +178,7 @@ int reply(ref HTTPRequest req, ref HTTPReply buffer)
     // Read-only public data, so browser clients get to use it directly
     req.addHeader("Access-Control-Allow-Origin", "*");
     req.reply(200, buffer, "application/json");
+    collectPeriodically();
     return REQUEST_OK;
 }
 
@@ -255,7 +261,6 @@ int apiWindowsCode(ref HTTPRequest req)
     putHeaderMatches(buffer, headers);
     buffer.put('}');
 
-    scope(exit) GC.collect();
     return reply(req, buffer);
 }
 
@@ -289,7 +294,6 @@ int apiWindowsError(ref HTTPRequest req)
     putModuleMatches(buffer, modules);
     buffer.put('}');
 
-    scope(exit) GC.collect();
     return reply(req, buffer);
 }
 
@@ -297,7 +301,12 @@ int apiWindowsHeaders(ref HTTPRequest req)
 {
     WindowsHeader[] headers = databaseWindowsHeaders();
 
-    HTTPReply buffer = HTTPReply.create(1024 + headers.length * 256);
+    size_t reserve = 1024;
+    foreach (ref WindowsHeader header; headers)
+        reserve += header.key.length + header.name.length +
+            header.description.length + ENTRY_OVERHEAD;
+
+    HTTPReply buffer = HTTPReply.create(reserve);
     buffer.writef(`{"count":%u,"headers":[`, headers.length);
     foreach (size_t i, ref WindowsHeader header; headers)
     {
@@ -324,7 +333,11 @@ int apiWindowsHeader(ref HTTPRequest req)
     if (header.name == string.init)
         throw new HttpServerException(HTTPStatus.notFound, HTTPMsg.notFound, req);
 
-    HTTPReply buffer = HTTPReply.create(1024 + header.symbolics.length * 256);
+    size_t reserve = 1024 + header.description.length;
+    foreach (ref WindowsSymbolic sym; header.symbolics)
+        reserve += sym.name.length + sym.message.length + ENTRY_OVERHEAD;
+
+    HTTPReply buffer = HTTPReply.create(reserve);
     buffer.put('{');
     putField(buffer, "key", header.key);
     buffer.put(',');
@@ -345,7 +358,6 @@ int apiWindowsHeader(ref HTTPRequest req)
     }
     buffer.put(`]}`);
 
-    scope(exit) GC.collect();
     return reply(req, buffer);
 }
 
@@ -353,7 +365,11 @@ int apiWindowsModules(ref HTTPRequest req)
 {
     WindowsModule[] modules = databaseWindowsModules();
 
-    HTTPReply buffer = HTTPReply.create(1024 + modules.length * 256);
+    size_t reserve = 1024;
+    foreach (ref WindowsModule mod; modules)
+        reserve += mod.name.length + mod.description.length + ENTRY_OVERHEAD;
+
+    HTTPReply buffer = HTTPReply.create(reserve);
     buffer.writef(`{"count":%u,"modules":[`, modules.length);
     foreach (size_t i, ref WindowsModule mod; modules)
     {
@@ -368,7 +384,6 @@ int apiWindowsModules(ref HTTPRequest req)
     }
     buffer.put(`]}`);
 
-    scope(exit) GC.collect();
     return reply(req, buffer);
 }
 
@@ -382,7 +397,11 @@ int apiWindowsModule(ref HTTPRequest req)
     if (mod.name == string.init)
         throw new HttpServerException(HTTPStatus.notFound, HTTPMsg.notFound, req);
 
-    HTTPReply buffer = HTTPReply.create(1024 + mod.messages.length * 256);
+    size_t reserve = 1024 + mod.name.length + mod.description.length;
+    foreach (ref WindowsModuleError err; mod.messages)
+        reserve += err.message.length + ENTRY_OVERHEAD;
+
+    HTTPReply buffer = HTTPReply.create(reserve);
     buffer.put('{');
     putField(buffer, "name", mod.name);
     buffer.put(',');
@@ -403,7 +422,6 @@ int apiWindowsModule(ref HTTPRequest req)
     }
     buffer.put(`]}`);
 
-    scope(exit) GC.collect();
     return reply(req, buffer);
 }
 
@@ -459,7 +477,11 @@ int apiCrt(ref HTTPRequest req)
     if (crt.name == string.init)
         throw new HttpServerException(HTTPStatus.notFound, HTTPMsg.notFound, req);
 
-    HTTPReply buffer = HTTPReply.create(1024 + crt.messages.length * 128);
+    size_t reserve = 1024;
+    foreach (ref DatabaseCrtMessage msg; crt.messages)
+        reserve += msg.message.length + ENTRY_OVERHEAD;
+
+    HTTPReply buffer = HTTPReply.create(reserve);
     buffer.put('{');
     putField(buffer, "key", crt.name);
     buffer.put(',');
@@ -476,7 +498,6 @@ int apiCrt(ref HTTPRequest req)
     }
     buffer.put(`]}`);
 
-    scope(exit) GC.collect();
     return reply(req, buffer);
 }
 
@@ -547,7 +568,6 @@ int apiSearch(ref HTTPRequest req)
     }
     buffer.put(`]}`);
 
-    scope(exit) GC.collect();
     return reply(req, buffer);
 }
 
