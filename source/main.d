@@ -170,6 +170,10 @@ void prepareHeader(ref HTTPReply buffer, ref HTTPRequest req, string title,
     
     buffer.put(`<body>`);
     
+    // Offscreen until focused: the nav repeats on every page, so the keyboard
+    // needs a way past it.
+    buffer.put(`<a class="skip-link" href="#main">Skip to content</a>`);
+    
     // navigation stuff (class.nav for Chota)
     buffer.put(`<nav class="nav">`);
     buffer.put(`<ul class="nav-left">`); // left nav
@@ -193,7 +197,7 @@ void prepareHeader(ref HTTPReply buffer, ref HTTPRequest req, string title,
     buffer.put(`</ul>`); // left nav
     buffer.put(`<ul class="nav-right">`); // right nav
     buffer.put(`<li class="theme-switch">`);
-    buffer.put(`<button onclick="toggleThemeMenu()" class="button hidden icon-only i i-sun" id="theme-button" aria-label="Theme"></button>`);
+    buffer.put(`<button onclick="toggleThemeMenu()" class="button hidden icon-only i i-sun" id="theme-button" aria-label="Theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-menu"></button>`);
     buffer.put(`<ul class="hidden" id="theme-menu">`); // theme menu
     buffer.put(`<li><button onclick="applyThemeLight()" class="button">Light</button></li>`);
     buffer.put(`<li><button onclick="applyThemeDark()" class="button">Dark</button></li>`);
@@ -201,7 +205,9 @@ void prepareHeader(ref HTTPReply buffer, ref HTTPRequest req, string title,
     buffer.put(`</ul>`); // theme menu
     buffer.put(`</li>`);
     buffer.put(`<li>`);
-    buffer.put(`<form action="/search">`); // search
+    buffer.put(`<form action="/search" role="search">`); // search
+    // A placeholder is not a label: it goes away as soon as the field has a value.
+    buffer.put(`<label class="visually-hidden" for="search-input">Search</label>`);
     buffer.put(`<input name="q" id="search-input" placeholder="Search"`);
     if (search_query) buffer.writef(` value="%s"`, search_query);
     buffer.put(` />`);
@@ -212,17 +218,18 @@ void prepareHeader(ref HTTPReply buffer, ref HTTPRequest req, string title,
     buffer.put(`</ul>`); // right nav
     buffer.put(`</nav>`);
     
-    buffer.put(`<div class="content">`);
+    buffer.put(`<main id="main" class="content">`);
 }
 // Row count past which a table stops being scannable by eye.
 enum FILTER_MIN_ROWS = 25;
 
 // Filter box for tables too long to scan by eye. Hidden until table.js reveals
-// it, since it does nothing without scripting.
+// it, since it does nothing without scripting — which is also why the field is
+// named by aria-label: a <label> element would have to be toggled in step.
 void putTableFilter(ref HTTPReply buffer, string table_id, string placeholder)
 {
-    buffer.writef(`<input type="text" class="table-filter hidden" data-table="%s" placeholder="%s" />`,
-        table_id, placeholder);
+    buffer.writef(`<input type="text" class="table-filter hidden" data-table="%s" placeholder="%s" aria-label="%s" />`,
+        table_id, placeholder, placeholder);
 }
 // Counter card on the front page. A null link leaves the label as plain text.
 void putStatCard(ref HTTPReply buffer, size_t count, string label, string link = null)
@@ -245,12 +252,13 @@ void putFieldRow(ref HTTPReply buffer, string name, string type, string values)
 }
 void prepareFooter(ref HTTPReply buffer, bool tablejs = false)
 {
-    buffer.put(`</div>`); // class="content"
+    buffer.put(`</main>`);
     
     // footer
     buffer.put(`<footer>`);
     buffer.put(`<div>`);
-    buffer.put(`<span>Made by <a href="https://github.com/dd86k" target="_blank">dd86k</a></span>`);
+    buffer.put(`<span>Made by <a href="https://github.com/dd86k" target="_blank" rel="noopener">dd86k`~
+        `<span class="visually-hidden"> (opens in a new tab)</span></a></span>`);
     buffer.put(`<span class="right">Written in <a href="https://dlang.org">D (Dlang)</a></span>`);
     buffer.put(`</div>`);
     buffer.put(`<div>`);
@@ -1453,7 +1461,7 @@ int main(string[] args)
                 "Search Windows and C runtime error codes, symbolic names, and messages.",
                 null, ActiveTab.none, escaped);
             
-            buffer.writef(`<h3>Results for "%s"</h3>`, escaped);
+            buffer.writef(`<h1>Results for "%s"</h1>`, escaped);
             
             if (results.length)
             {
@@ -1487,9 +1495,9 @@ int main(string[] args)
                         break;
                     }
                     
-                    buffer.put(`<div class="searchtitle">`);
+                    buffer.put(`<h2 class="searchtitle">`);
                     buffer.writef(`<a href="%s">%s</a>`, url_code, result.origId);
-                    buffer.put(`</div>`);
+                    buffer.put(`</h2>`);
                     
                     buffer.put(`<div>`);
                     buffer.put(title_type);
@@ -1520,7 +1528,7 @@ int main(string[] args)
             }
             else
             {
-                buffer.put(`<h3>No results found.</h3>`);
+                buffer.put(`<p>No results found.</p>`);
             }
             
             prepareFooter(buffer);
