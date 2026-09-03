@@ -56,6 +56,37 @@ HTTPServer addPubRoute(HTTPServer http, string path, const(char) *contentType)
         .addRoute("HEAD", path, handler);
 }
 
+// Operator-supplied markup for the About page, from --about-file. It comes
+// from the file the deployment points at, not from a request, so it is written
+// out verbatim.
+__gshared string about_file;
+__gshared string about_extra;
+
+/// Load --about-file, once at startup.
+///
+/// Release builds keep the bytes; debug builds read and discard them, so a bad
+/// path still fails at startup while aboutExtra() re-reads per request.
+void loadAboutFile(string path)
+{
+    ubyte[] content = cast(ubyte[])readAll(path);
+    about_file = path;
+    debug {} else about_extra = cast(string)content;
+}
+
+const(char)[] aboutExtra()
+{
+    debug
+    {
+        if (about_file is null)
+            return null;
+        try
+            return cast(const(char)[])readAll(about_file);
+        catch (Exception ex) // Mid-edit file, or one that just got removed
+            return null;
+    }
+    else return about_extra;
+}
+
 /// Serve robots.txt, which unlike the rest of pub/ cannot be handed over
 /// verbatim: the Sitemap directive it carries has to be an absolute URL, and
 /// the origin is only known per request while --base-url is unset.
@@ -481,6 +512,7 @@ void clipage(string arg)
 int main(string[] args)
 {
     string odatafolder = "data";
+    string oaboutfile;
     ushort port = 8999;
     bool all;
     GetoptResult optres = void;
@@ -488,6 +520,7 @@ int main(string[] args)
     {
         optres = getopt(args, config.caseSensitive,
         "from-folder",  "Load data from folder (default='data')", &odatafolder,
+        "about-file",   "HTML fragment to include on the About page", &oaboutfile,
         "all",          "Listen to all addresses", &all,
         "base-url",     "Origin for canonical URLs (default: request Host)", &base_url,
         "port",         "Listen to port (default=8999)", &port,
@@ -516,6 +549,16 @@ int main(string[] args)
     
     // Paths are appended verbatim, so the origin must not end in one
     base_url = base_url.stripRight("/");
+
+    if (oaboutfile)
+    {
+        try loadAboutFile(oaboutfile);
+        catch (Exception ex)
+        {
+            stderr.writeln("error: ", ex.msg);
+            return 1;
+        }
+    }
 
     write("Loading database..."); stdout.flush();
     databaseLoadFromFolder(odatafolder);
@@ -610,7 +653,8 @@ int main(string[] args)
         })
         .addRoute("GET", "/about", (ref HTTPRequest req)
         {
-            HTTPReply buffer = HTTPReply.create(8 * 1024);
+            const(char)[] extra = aboutExtra();
+            HTTPReply buffer = HTTPReply.create(8 * 1024 + extra.length);
             
             prepareHeader(buffer, req, "About | OEDB",
                 "About OEDB: where the error entries come from, the libraries in use, "~
@@ -626,8 +670,12 @@ int main(string[] args)
                 `separated from the Windows operating system and C runtimes to be `~
                 `accessible anywhere online.`~
                 `</p>`);
-            buffer.put(`<p>This website was created by <a href="https://github.com/dd86k/">dd86k</a>.</p>`);
+            // Error pages point at #contact for anything broken
+            buffer.put(`<p id="contact">This website was created by <a href="https://github.com/dd86k/">dd86k</a>.</p>`);
             buffer.writef(`<p>Running Motoori %s, compiled %s.</p>`, PROJECT_VERSION, __TIMESTAMP__);
+
+            if (extra.length)
+                buffer.put(extra);
 
             DatabaseStatistics dbstats = databaseStatistics();
 
