@@ -294,6 +294,19 @@ h1,h2,h3,h4,h5,h6 { word-wrap: anywhere; }
 
 /* 1.4.8 caps a measure at 80 characters, and wants the gap between paragraphs
    at 1.5x the line spacing — 1.6 here, from Chota's body rule. */
+/* The dotted rule is the only hint that an abbreviation carries an expansion. */
+abbr[title] {
+	text-decoration: underline dotted;
+	text-underline-offset: .25em;
+	cursor: help;
+}
+/* The wordmark links to the home page, which spells the name out in full, so it
+   does not need to advertise a tooltip as well. */
+.brand abbr[title] {
+	text-decoration: none;
+	cursor: inherit;
+}
+
 p, li {
 	max-width: 80ch;
 }

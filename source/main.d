@@ -125,6 +125,22 @@ immutable string THEME_BOOTSTRAP = `<script>`~
     `})()`~
     `</script>`;
 
+// Expansions for the abbreviations that turn up in prose. Written once here
+// rather than at each use: the two hand-written API expansions had already
+// drifted apart, and one of them was spelled `tittle` and so expanded nothing.
+// The error-code type names (Win32, HRESULT, NTSTATUS, LSTATUS) are deliberately
+// absent — they are names rather than contractions, and /windows/error-types
+// defines each one at length.
+enum ABBR_API   = `<abbr title="Application Programming Interface">API</abbr>`;
+enum ABBR_COM   = `<abbr title="Component Object Model">COM</abbr>`;
+enum ABBR_DLL   = `<abbr title="Dynamic-Link Library">DLL</abbr>`;
+enum ABBR_JSON  = `<abbr title="JavaScript Object Notation">JSON</abbr>`;
+enum ABBR_MSVC  = `<abbr title="Microsoft Visual C++">MSVC</abbr>`;
+enum ABBR_OEDB  = `<abbr title="Online Error Database">OEDB</abbr>`;
+enum ABBR_SDK   = `<abbr title="Software Development Kit">SDK</abbr>`;
+enum ABBR_URL   = `<abbr title="Uniform Resource Locator">URL</abbr>`;
+enum ABBR_WOW64 = `<abbr title="Windows 32-bit on Windows 64-bit">SysWOW64</abbr>`;
+
 void prepareHeader(ref HTTPReply buffer, ref HTTPRequest req, string title,
     const(char)[] description, string canonical, ActiveTab tab, string search_query = null,
     bool noindex = false)
@@ -177,7 +193,7 @@ void prepareHeader(ref HTTPReply buffer, ref HTTPRequest req, string title,
     // navigation stuff (class.nav for Chota)
     buffer.put(`<nav class="nav">`);
     buffer.put(`<ul class="nav-left">`); // left nav
-    buffer.put(`<li class="brand"><a href="/">OEDB</a></li>`);
+    buffer.put(`<li class="brand"><a href="/">`~ABBR_OEDB~`</a></li>`);
     if (tab == ActiveTab.windows)
         buffer.put(`<li class="tabs"><a href="/windows/" class="active">Windows</a></li>`);
     else
@@ -662,7 +678,7 @@ int main(string[] args)
                     `Microsoft Error Lookup Tool version 6.4.5</a> for Windows header entries.</li>`~
                 `<li>Microsoft Windows x64 installs for Windows module entries, `~
                     `per release as listed <a href="#database">above</a>.</li>`~
-                `<li>Microsoft Windows 11 x64 for MSVC entries.</li>`~
+                `<li>Microsoft Windows 11 x64 for `~ABBR_MSVC~` entries.</li>`~
                 `<li>Ubuntu 24.04 AMD64 for Glibc entries.</li>`~
                 `<li>Alpine 3.18 AMD64 for Musl entries.</li>`~
                 `</ul>`
@@ -693,7 +709,7 @@ int main(string[] args)
             buffer.put(`<h1>JSON API</h1>`);
             buffer.put(
                 `<p>`~
-                `Everything the website shows is also served as JSON under `~
+                `Everything the website shows is also served as `~ABBR_JSON~` under `~
                 `<code>/api/v1</code>. All endpoints are <code>GET</code>, need no `~
                 `authentication, and are readable from a browser: replies carry `~
                 `<code>Access-Control-Allow-Origin: *</code>.`~
@@ -849,7 +865,7 @@ int main(string[] args)
             );
             buffer.put(FIELD_TABLE_HEAD);
             putFieldRow(buffer, "key", "string",
-                `Lowercase identifier, and the one to put in a URL. Header names and `~
+                `Lowercase identifier, and the one to put in a `~ABBR_URL~`. Header names and `~
                 `runtimes are reachable by <code>key</code>, modules by `~
                 `<code>name</code>.`);
             putFieldRow(buffer, "name", "string",
@@ -1060,7 +1076,7 @@ int main(string[] args)
             buffer.put(
                 `<p>`~
                 `The Microsoft Windows operating system uses a variety of `~
-                `<abbr title="Application Program Interface">API</abbr>s from various `~
+                ABBR_API~`s from various `~
                 `subsystems with different error code formats.`~
                 `</p>`~
                 `<p>`~
@@ -1116,7 +1132,7 @@ int main(string[] args)
                 `This document explains the Win32, HRESULT, NTSTATUS, and LSTATUS error codes.</p>`~
                 `<h2 id="win32">Win32</h2>`~
                 `<p>`~
-                `Win32 <abbr tittle="Application Programming Interface">API</abbr> error `~
+                `Win32 `~ABBR_API~` error `~
                 `codes are possibly the most known code structure in Windows. These codes `~
                 `are used for various modules including the user-mode kernel modules (<code>ntdll.dll</code>).`~
                 `</p>`~
@@ -1127,7 +1143,7 @@ int main(string[] args)
                 `</p>`~
                 `<h2 id="hresult">HRESULT</h2>`~
                 `<p>`~
-                `HRESULT codes are used under the <abbr title="Component Object Model">COM</abbr> `~
+                `HRESULT codes are used under the `~ABBR_COM~` `~
                 `system`~
                 `</p>`~
                 `<p>`~
@@ -1203,7 +1219,7 @@ int main(string[] args)
                 `<p>`~
                 `NTSTATUS error codes are typically used for low-level operations `~
                 `such as machine check exceptions, debugger API, and the `~
-                `<abbr title="Windows-on-Windows64">SysWOW64</abbr> 32-bit `~
+                ABBR_WOW64~` 32-bit `~
                 `application layer, communicated from the WindowsNT kernel.`~
                 `</p>`~
                 `<p>These codes are defined in <code>Ntdef.h</code> and have the following structure.</p>`~
@@ -1336,7 +1352,7 @@ int main(string[] args)
                 `<p class="breadcrumb"><a href="/windows/">Windows</a> / Modules</p>`~
                 `<h1>Windows Modules</h1>`~
                 `<p>`~
-                `Also known as a dynamic library, or in the context of Windows, a DLL, `~
+                `Also known as a dynamic library, or in the context of Windows, a `~ABBR_DLL~`, `~
                 `a module, that can be dynamically loaded onto memory, that may contain `~
                 `code and resources. Resources include images, pieces of texts (strings), `~
                 `certificates, and more.`~
@@ -1398,7 +1414,7 @@ int main(string[] args)
                 `source files.`~
                 `</p>`~
                 `<p>`~
-                `While official Windows header files can be found in the Windows SDK `~
+                `While official Windows header files can be found in the Windows `~ABBR_SDK~` `~
                 `and Visual Studio installations, the current source is from the convenient `~
                 `Microsoft Error Lookup tool.`~
                 `</p>`
