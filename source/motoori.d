@@ -2,7 +2,7 @@ module motoori;
 
 public import utils;
 
-enum PROJECT_VERSION = "1.0.0";
+enum PROJECT_VERSION = "1.1.0";
 
 static immutable string PAGE_LICENSE =
 `Creative Commons Legal Code
