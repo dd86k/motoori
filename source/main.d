@@ -90,6 +90,24 @@ struct ErrorModule
     const(char)[] symbolic;
 }
 
+// Inlined in <head> and deliberately not in theme.js: the theme class has to
+// land before the first paint, and theme.js only runs at the end of <body>.
+// The class goes on <html> because <body> does not exist yet at this point.
+immutable string THEME_BOOTSTRAP = `<script>`~
+    `function applyTheme(t){`~
+        `var c=document.documentElement.classList;`~
+        `c.remove('light','dark','highcontrast');`~
+        `c.add(t);`~
+        `try{localStorage.setItem('theme',t)}catch(e){}`~
+    `}`~
+    `(function(){`~
+        `var t=null;`~
+        `try{t=localStorage.getItem('theme')}catch(e){}`~
+        `if(!t)t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';`~
+        `applyTheme(t)`~
+    `})()`~
+    `</script>`;
+
 void prepareHeader(ref HTTPReply buffer, ref HTTPRequest req, string title,
     const(char)[] description, string canonical, ActiveTab tab, string search_query = null,
     bool noindex = false)
@@ -100,6 +118,7 @@ void prepareHeader(ref HTTPReply buffer, ref HTTPRequest req, string title,
     buffer.put(`<head>`);
     buffer.put(`<meta charset="utf-8">`);
     buffer.put(`<meta name="viewport" content="width=device-width, initial-scale=1">`);
+    buffer.put(`<meta name="color-scheme" content="dark light">`);
     if (noindex)
         buffer.put(`<meta name="robots" content="noindex">`);
     buffer.put(`<meta property="og:site_name" content="OEDB">`);
@@ -128,8 +147,8 @@ void prepareHeader(ref HTTPReply buffer, ref HTTPRequest req, string title,
     buffer.put(`<link rel="stylesheet" href="/chota.min.css">`);
     buffer.put(`<link rel="stylesheet" href="/main.css">`);
     buffer.put(`<link rel="icon" href="/favicon.png">`);
-    buffer.put(`<noscript><link rel="stylesheet" href="/noscript.css" /></noscript>`);
     buffer.writef(`<title>%s</title>`, title);
+    buffer.put(THEME_BOOTSTRAP);
     buffer.put(`</head>`);
     
     buffer.put(`<body>`);
@@ -156,20 +175,21 @@ void prepareHeader(ref HTTPReply buffer, ref HTTPRequest req, string title,
         buffer.put(`<li class="tabs"><a href="/about">About</a></li>`);
     buffer.put(`</ul>`); // left nav
     buffer.put(`<ul class="nav-right">`); // right nav
-    buffer.put(`<li>`);
-    buffer.put(`<button onclick="toggleThemeMenu()" class="button secondary hidden icon-only i i-sun" id="theme-button"></button>`);
+    buffer.put(`<li class="theme-switch">`);
+    buffer.put(`<button onclick="toggleThemeMenu()" class="button hidden icon-only i i-sun" id="theme-button" aria-label="Theme"></button>`);
     buffer.put(`<ul class="hidden" id="theme-menu">`); // theme menu
     buffer.put(`<li><button onclick="applyThemeLight()" class="button">Light</button></li>`);
     buffer.put(`<li><button onclick="applyThemeDark()" class="button">Dark</button></li>`);
     buffer.put(`<li><button onclick="applyThemeHighConstrast()" class="button">High contrast</button></li>`);
-    buffer.put(`</li>`);
     buffer.put(`</ul>`); // theme menu
+    buffer.put(`</li>`);
     buffer.put(`<li>`);
     buffer.put(`<form action="/search">`); // search
     buffer.put(`<input name="q" id="search-input" placeholder="Search"`);
     if (search_query) buffer.writef(` value="%s"`, search_query);
     buffer.put(` />`);
-    buffer.put(`<input type="submit" value=" " class="button icon-only i i-search" style="margin:0;" />`);
+    // A button, not an input: only a real element carries the ::before the icon rides on
+    buffer.put(`<button type="submit" class="button icon-only i i-search" aria-label="Search"></button>`);
     buffer.put(`</form>`); // search
     buffer.put(`</li>`);
     buffer.put(`</ul>`); // right nav
@@ -186,6 +206,16 @@ void putTableFilter(ref HTTPReply buffer, string table_id, string placeholder)
 {
     buffer.writef(`<input type="text" class="table-filter hidden" data-table="%s" placeholder="%s" />`,
         table_id, placeholder);
+}
+// Counter card on the front page. A null link leaves the label as plain text.
+void putStatCard(ref HTTPReply buffer, size_t count, string label, string link = null)
+{
+    buffer.writef(`<div class="col card stat"><span class="stat-value">%d</span>`, count);
+    if (link)
+        buffer.writef(`<a class="stat-label" href="%s">%s</a>`, link, label);
+    else
+        buffer.writef(`<span class="stat-label">%s</span>`, label);
+    buffer.put(`</div>`);
 }
 // Field reference tables on the API page
 enum FIELD_TABLE_HEAD = `<table class="table">`~
@@ -220,6 +250,40 @@ void prepareFooter(ref HTTPReply buffer, bool tablejs = false)
     buffer.put(`</body>`);
     buffer.put(`</html>`);
 }
+// Windows changed its logo twice across the releases covered here: the Aero
+// flag up to 7, the flat tilted flag from 8 to 10, and the straight panes of 11.
+// The build string is the only version data a release carries.
+string releaseIconClass(string build)
+{
+    import std.array : split;
+    import std.conv : to;
+
+    string[] parts = split(build, '.');
+    if (parts.length < 3)
+        return "win-flat";
+
+    try
+    {
+        uint major  = to!uint(parts[0]);
+        uint minor  = to!uint(parts[1]);
+        uint number = to!uint(parts[2]);
+
+        if (major < 6 || (major == 6 && minor <= 1))
+            return "win-aero";
+        if (major >= 10 && number >= 22000)
+            return "win-modern";
+    }
+    catch (Exception) // hand-edited metadata shouldn't change the page
+    {
+    }
+
+    return "win-flat";
+}
+void putReleaseTag(ref HTTPReply buffer, ref WindowsRelease release)
+{
+    buffer.writef(`<span class="tag is-small %s" title="%s">%s</span>`,
+        releaseIconClass(release.build), release.name, release.key);
+}
 // Write the OS releases an entry was found in, as tags
 void putWindowsOS(ref HTTPReply buffer, WindowsOSSet os)
 {
@@ -228,7 +292,7 @@ void putWindowsOS(ref HTTPReply buffer, WindowsOSSet os)
         if ((os & release.bit) == 0)
             continue;
 
-        buffer.writef(`<span class="tag is-small" title="%s">%s</span>`, release.name, release.key);
+        putReleaseTag(buffer, release);
     }
 }
 // Read a code under both layouts. The bit tables mirror the ones on
@@ -479,34 +543,24 @@ int main(string[] args)
                 "and C runtimes, searchable by code, symbolic name, or message text.",
                 "/", ActiveTab.none);
 
-            buffer.put(`<h1 class="title">Online Error Database</h1>`);
-            buffer.put(`<div class="row" style="text-align:center;margin:2em;">`); // class="row"
-            buffer.put(`<div class="col card">`); // windows header count
-            buffer.writef(`<h3>%d</h3>`, dbstats.windowsHeaderCount);
-            buffer.put(`<div><a href="/windows/headers">Windows headers</a></div>`);
-            buffer.put(`</div>`); // windows header count
-            buffer.put(`<div class="col card">`); // windows module count
-            buffer.writef(`<h3>%d</h3>`, dbstats.windowsModuleCount);
-            buffer.put(`<div><a href="/windows/modules">Windows modules</a></div>`);
-            buffer.put(`</div>`); // windows module count
-            buffer.put(`<div class="col card">`); // total messages
-            buffer.writef(`<h3>%d</h3>`, dbstats.totalMessageCount);
-            buffer.put(`<div>Error messages</div>`);
-            buffer.put(`</div>`); // total messages
-            buffer.put(`<div class="col card">`); // Windows Symbolic count
-            buffer.writef(`<h3>%d</h3>`, dbstats.windowsSymbolicCount);
-            buffer.put(`<div>Symbolic names</div>`);
-            buffer.put(`</div>`); // Windows Symbolic count
-            buffer.put(`</div>`); // class="row"
-            
             buffer.put(
-                `<p class="center tight">`~
+                `<div class="hero">`~
+                `<h1 class="title">Online Error Database</h1>`~
+                `<p class="tagline">`~
                 `Documenting error codes and messages found on various platforms, `~
                 `such as Microsoft&reg; Windows&reg; `~
                 `and C runtimes at the same, convenient place.`~
-                `</p>`
+                `</p>`~
+                `</div>`
             );
-            
+
+            buffer.put(`<div class="row stats">`); // class="row"
+            putStatCard(buffer, dbstats.windowsHeaderCount, "Windows headers", "/windows/headers");
+            putStatCard(buffer, dbstats.windowsModuleCount, "Windows modules", "/windows/modules");
+            putStatCard(buffer, dbstats.totalMessageCount, "Error messages");
+            putStatCard(buffer, dbstats.windowsSymbolicCount, "Symbolic names");
+            buffer.put(`</div>`); // class="row"
+
             prepareFooter(buffer);
             
             req.reply(200, buffer, "text/html");
@@ -555,10 +609,10 @@ int main(string[] args)
             buffer.put(`<tbody>`);
             foreach (ref WindowsRelease release; databaseWindowsReleases())
             {
-                buffer.writef(
-                    `<tr><td><span class="tag is-small">%s</span></td><td>%s</td><td>%s</td>`~
-                    `<td>%d</td><td>%d</td></tr>`,
-                    release.key, release.name, release.build,
+                buffer.put(`<tr><td>`);
+                putReleaseTag(buffer, release);
+                buffer.writef(`</td><td>%s</td><td>%s</td><td>%d</td><td>%d</td></tr>`,
+                    release.name, release.build,
                     release.moduleCount, release.messageCount);
             }
             buffer.put(`</tbody></table>`);
@@ -1002,9 +1056,9 @@ int main(string[] args)
             buffer.put(`<tbody>`);
             foreach (ref WindowsRelease release; databaseWindowsReleases())
             {
-                buffer.writef(
-                    `<tr><td><span class="tag is-small">%s</span></td><td>%s</td><td>%s</td></tr>`,
-                    release.key, release.name, release.build);
+                buffer.put(`<tr><td>`);
+                putReleaseTag(buffer, release);
+                buffer.writef(`</td><td>%s</td><td>%s</td></tr>`, release.name, release.build);
             }
             buffer.put(`</tbody></table>`);
 
@@ -1046,7 +1100,7 @@ int main(string[] args)
                 `<p>`~
                 `The table below denotes the structure of a HRESULT code.`~
                 `</p>`~
-                `<table class=table>`~
+                `<table class="table bits">`~
                 `<tr>`~
                     `<th>31</th><th>30</th><th>29</th><th>28</th><th>27</th><th colspan="11">`~
                     `<span style="float:left">26</span><span style="float: right">16</span>`~
@@ -1120,7 +1174,7 @@ int main(string[] args)
                 `application layer, communicated from the WindowsNT kernel.`~
                 `</p>`~
                 `<p>These codes are defined in <code>Ntdef.h</code> and have the following structure.</p>`~
-                `<table class="table">`~
+                `<table class="table bits">`~
                 `<tr>`~
                 `<th colspan="2"><span style="float: left">31</span> <span style="float: right">30</span></th>`~
                 `<th>29</th>`~
@@ -1136,7 +1190,7 @@ int main(string[] args)
                 `<tr>`~
                 `<th colspan="16"><span style="float: left">15</span> <span style="float: right">0</span></th>`~
                 `</tr>`~
-                `</tr>`~
+                `<tr>`~
                 `<td colspan="16">Code</td>`~
                 `</tr>`~
                 `</table>`~
@@ -1786,7 +1840,6 @@ int main(string[] args)
         .addPubRoute("/search.js",      "text/javascript")
         .addPubRoute("/main.css",       "text/css")
         .addPubRoute("/chota.min.css",  "text/css")
-        .addPubRoute("/noscript.css",   "text/css")
         .addPubRoute("/humans.txt",     "text/plain")
         .addRobotsRoute()
         .addSitemapRoutes()

@@ -4,144 +4,443 @@
 	font-variant-ligatures: none;
 }
 
+/* Chota's own variables are re-pointed at the theme tokens below, so its
+   components (buttons, tags, inputs) follow the theme without being restyled. */
 :root {
-	--color-lightGrey: #747681;
-	--font-size: 1.5rem;
-	--font-family-sans: monospace;
-	--font-family-mono: monospace;
-	--color-error: #fb6666;
+	--font-size: 1.6rem;
+	--font-family-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono",
+		"Roboto Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+	--font-family-sans: var(--font-family-mono);
+	--radius: .6rem;
 }
 
-body.light {
-	--bg-color: #eee;
-	--bg-secondary-color: black;
-	--font-color: #111111;
-	--color-grey: #dfdfdf;
-	--color-darkGrey: #111111;
-	--color-primary: #21523b;
-	--brand-color: #cacad6;
-	--search-button: #39c483;
+:root, html.dark {
+	--bg-color: #17191c;
+	--surface: #1e2126;
+	--surface-alt: #24282e;
+	--border: #333940;
+	--font-color: #e7e9ec;
+	--muted: #98a0aa;
+	--accent: #5ad48e;
+	--accent-weak: rgba(90, 212, 142, .13);
+	--hover: rgba(255, 255, 255, .045);
+	--shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 4px 16px rgba(0, 0, 0, .28);
+	--color-error: #f08a8a;
 }
-body.dark {
-	--bg-color: #222222;
-	--bg-secondary-color: black;
-	--font-color: #f3f3f3;
-	--color-grey: #dfdfdf;
-	--color-darkGrey: #dfdfdf;
-	--color-primary: lightgreen;
-	--brand-color: midnightblue;
-	--search-button: #39c483;
+html.light {
+	--bg-color: #f5f5f3;
+	--surface: #ffffff;
+	--surface-alt: #ececeb;
+	--border: #d8d8d3;
+	--font-color: #16181a;
+	--muted: #61646b;
+	--accent: #14724b;
+	--accent-weak: rgba(20, 114, 75, .10);
+	--hover: rgba(0, 0, 0, .035);
+	--shadow: 0 1px 2px rgba(16, 18, 20, .06), 0 3px 12px rgba(16, 18, 20, .05);
+	--color-error: #b3261e;
 }
-body.highcontrast {
-	--bg-color: black;
-	--bg-secondary-color: white;
-	--font-color: white;
-	--color-grey: white;
-	--color-darkGrey: white;
-	--color-primary: lightgreen;
-	--brand-color: black;
-	--search-button: white;
+html.highcontrast {
+	--bg-color: #000000;
+	--surface: #000000;
+	--surface-alt: #000000;
+	--border: #ffffff;
+	--font-color: #ffffff;
+	--muted: #ffffff;
+	--accent: lightgreen;
+	--accent-weak: transparent;
+	--hover: #303030;
+	--shadow: none;
+	--color-error: #ff9a9a;
 }
+
+body {
+	--bg-secondary-color: var(--surface-alt);
+	--color-primary: var(--accent);
+	--color-grey: var(--muted);
+	--color-lightGrey: var(--border);
+	--color-darkGrey: var(--font-color);
+	--brand-color: var(--surface);
+}
+
+body {
+	display: flex;
+	flex-direction: column;
+	min-height: 100vh;
+	-webkit-text-size-adjust: 100%;
+}
+
+::selection {
+	background-color: var(--accent);
+	color: var(--bg-color);
+}
+:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+/* Navigation */
 
 nav {
 	background-color: var(--brand-color);
+	border-bottom: 1px solid var(--border);
+	align-items: center;
+	padding: 0 1.5rem;
+	gap: 1rem;
+}
+@media screen and (min-width: 600px) {
+	nav {
+		position: sticky;
+		top: 0;
+		z-index: 10;
+	}
 }
 nav ul {
 	margin: 0;
 	padding: 0;
 	list-style-type: none;
+	align-items: center;
+}
+nav .brand a {
+	color: var(--font-color);
+	font-weight: 700;
+	letter-spacing: .08em;
+	padding-left: 1rem;
+	padding-right: 1rem;
+}
+nav .tabs > a {
+	color: var(--muted);
+	border-bottom: 2px solid transparent;
+	padding: 1.4rem 1.6rem;
+}
+nav .tabs > a:hover {
+	color: var(--font-color);
+	border-bottom-color: var(--border);
+	opacity: 1;
 }
 nav .active {
-	font-weight: bold;
-}
-nav form {
-	margin: var(--font-size);
-	display: flex;
-}
-nav input[name=q] {
-	border-radius: 6px 0 0 6px !important;
-	color: var(--font-color);
-	background-color: var(--bg-color);
-}
-nav input[type=submit] {
-	border-top: 1px solid var(--color-lightGrey); /* missing from Chota */
-	border-right: 1px solid var(--color-lightGrey); /* missing from Chota */
-	border-bottom: 1px solid var(--color-lightGrey); /* missing from Chota */
-	background-color: var(--search-button);
-	border-radius: 0 6px 6px 0;
+	color: var(--font-color) !important;
+	border-bottom-color: var(--accent) !important;
 }
 
+/* The form, not the input, carries the frame: the text field and the submit
+   button have to read as one control. */
+nav form {
+	display: flex;
+	align-items: center;
+	margin: auto 0 auto 1rem;
+	padding-left: 1.4rem;
+	border: 1px solid var(--border);
+	border-radius: 999px;
+	background-color: var(--bg-color);
+	transition: border-color .15s ease, box-shadow .15s ease;
+}
+nav form:focus-within {
+	border-color: var(--accent);
+	box-shadow: 0 0 0 3px var(--accent-weak);
+}
+/* !important throughout: Chota's input rule carries seven :not()s */
+nav input[name=q] {
+	width: 20rem !important;
+	max-width: 40vw;
+	padding: .7rem 0 !important;
+	border: 0 !important;
+	background-color: transparent;
+	color: var(--font-color);
+	box-shadow: none !important;
+}
+nav button[type=submit] {
+	margin: 0;
+	color: var(--muted);
+	background-color: transparent;
+}
+nav button[type=submit]:hover {
+	color: var(--accent);
+	opacity: 1;
+}
+
+.theme-switch {
+	position: relative; /* anchors the menu under the button */
+	display: flex;
+	align-items: center;
+}
 #theme-button {
-	border: 1px solid white;
-	margin: var(--font-size) 0;
+	color: var(--muted);
+	background-color: var(--bg-color);
+	border: 1px solid var(--border);
+	border-radius: 50%;
+	padding: 1rem; /* matches Chota's .icon-only, so it lines up with the search pill */
+	margin: auto 0 auto .8rem;
+}
+#theme-button:hover {
+	color: var(--font-color);
+	border-color: var(--muted);
+	opacity: 1;
 }
 #theme-menu {
-	background-color: var(--bg-color);
 	position: absolute;
-	border: .5rem solid lightgray;
+	top: calc(100% + .8rem);
+	right: 0;
+	padding: .5rem;
+	background-color: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	box-shadow: var(--shadow);
+	overflow: hidden;
 }
 #theme-menu button {
 	width: 100%;
-	border-radius: unset;
 	margin: 0;
+	padding: .8rem 1.6rem;
+	text-align: left;
+	color: var(--font-color);
+	background-color: transparent;
+	border-radius: .4rem;
 }
 #theme-menu button:hover {
-	background-color: var(--bg-color);
+	background-color: var(--hover);
 	opacity: unset;
 }
 
-.breadcrumb {
-	margin-top: 1em;
-}
+/* Layout */
 
 .content {
-	width: 85%;
-	margin: 0 auto 3em;
+	width: 100%;
+	max-width: 118rem;
+	margin: 0 auto;
+	padding: 0 2rem 6rem;
+	flex: 1 0 auto;
 }
 .content a {
 	text-decoration: underline;
+	text-underline-offset: .25em;
 }
 
-h1 { font-size: 5rem; }
+.breadcrumb {
+	margin: 2rem 0 0;
+	color: var(--muted);
+	font-size: .9em;
+}
+.breadcrumb a {
+	color: var(--muted);
+}
+
+/* Typography */
+
+h1 {
+	font-size: 4rem;
+	line-height: 1.15;
+	letter-spacing: -.02em;
+	margin-bottom: .5em;
+}
 h2 {
-	font-size: 3.75rem;
-	border-bottom: 3px solid var(--font-color);
+	font-size: 2.8rem;
+	border-bottom: 1px solid var(--border);
+	padding-bottom: .3em;
 	margin-top: 2em;
 }
+h3 { font-size: 2.1rem; }
 h1,h2,h3,h4,h5,h6 { word-wrap: anywhere; }
 
+p, li {
+	max-width: 90ch;
+}
+
 pre {
-	border: .25rem solid var(--font-color);
-	background-color: inherit;
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	background-color: var(--surface);
+	padding: 1.5rem 2rem;
 	white-space: pre-line;
 	word-break: keep-all;
-}
-
-table {
-	table-layout: fixed;
-	margin: 2rem 0;
-}
-
-table td, table th {
-	border: .1em solid var(--font-color);
-	padding: .5rem;
-	text-overflow: ellipsis; 
-	word-wrap: break-word;
-	text-align: center;
+	color: var(--muted);
 }
 
 code {
 	word-break: keep-all;
+	background-color: var(--surface-alt);
+	border: 1px solid var(--border);
 }
 
-.tight {
-	width: 60%;
+/* Tables */
+
+table {
+	table-layout: fixed;
+	margin: 2rem 0 3rem;
+	border-top: 1px solid var(--border);
+}
+
+table th {
+	padding: 1rem 1.2rem;
+	text-align: left;
+	font-size: .85em;
+	letter-spacing: .06em;
+	text-transform: uppercase;
+	color: var(--muted);
+	background-color: var(--surface-alt);
+	border-bottom: 1px solid var(--border);
+}
+table td {
+	padding: 1rem 1.2rem;
+	text-align: left;
+	border-bottom: 1px solid var(--border);
+	text-overflow: ellipsis;
+	word-wrap: break-word;
+}
+table tbody tr:hover {
+	background-color: var(--hover);
+}
+table tfoot td {
+	color: var(--muted);
+	background-color: var(--surface-alt);
+}
+
+/* Bit layouts read as a diagram of a 32-bit word, so they keep the full grid
+   and centred cells that the data tables drop. */
+.bits {
+	text-align: center;
+	font-size: .9em;
+}
+.bits th, .bits td {
+	padding: .7rem .3rem;
+	text-align: center;
+	text-transform: none;
+	letter-spacing: 0;
+	border: 1px solid var(--border);
+}
+.bits td {
+	color: var(--font-color);
+}
+
+/* Filter box for long tables. Borders match the table below and the corners
+   meet it, so the box reads as part of the table rather than as a stray field. */
+.table-filter {
+	margin: 2rem 0 0 0;
+	border: 1px solid var(--border) !important;
+	border-radius: var(--radius) var(--radius) 0 0 !important;
+	padding: .9rem 1.2rem .9rem 4.4rem !important;
+	color: var(--font-color);
+	background-color: var(--surface);
+	background-repeat: no-repeat;
+	background-position: 1.4rem center;
+	background-size: 1.8rem;
+	/* stroke is baked in: currentColor does not resolve inside a background-image */
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2398a0aa' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolygon points='22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3'%3E%3C/polygon%3E%3C/svg%3E");
+}
+.table-filter:focus {
+	border-color: var(--accent) !important;
+	box-shadow: 0 0 0 3px var(--accent-weak) !important;
+}
+.table-filter::placeholder {
+	color: var(--muted);
+	opacity: 1; /* Firefox dims placeholders by default */
+}
+.table-filter + table {
+	margin-top: 0;
+	border-top: 0;
+}
+html.highcontrast .table-filter {
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolygon points='22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3'%3E%3C/polygon%3E%3C/svg%3E");
+}
+html.highcontrast .table-filter::placeholder {
+	color: white;
+}
+
+/* Home page */
+
+.hero {
+	text-align: center;
+	margin: 8rem auto 6rem;
+	max-width: 70rem;
+}
+.title {
+	font-size: 5rem;
+	line-height: 1.1;
+	margin: 0 0 2rem;
+}
+.tagline {
+	color: var(--muted);
 	margin: 0 auto;
 }
+
+.stats {
+	margin-bottom: 6rem;
+}
+.stat {
+	text-align: center;
+}
+.stat-value {
+	display: block;
+	font-size: 3.2rem;
+	font-weight: 700;
+	line-height: 1.2;
+	color: var(--accent);
+	font-variant-numeric: tabular-nums;
+}
+.stat-label {
+	color: var(--muted);
+}
+a.stat-label:hover {
+	color: var(--accent);
+	opacity: 1;
+}
+
+/* Search results */
+
+.result {
+	margin-bottom: 2rem;
+	padding: 1.5rem 2rem;
+	background-color: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	transition: border-color .15s ease;
+}
+.result:hover {
+	border-color: var(--accent);
+}
+.result p:last-child {
+	margin-bottom: 0;
+	color: var(--muted);
+}
+/* Query hits come back wrapped in <u>; underlines get lost in monospace prose. */
+.result u {
+	text-decoration: none;
+	color: var(--font-color);
+	background-color: var(--accent-weak);
+	box-shadow: 0 1px 0 var(--accent);
+}
+.searchtitle {
+	font-size: 1.5em;
+}
+
+/* Components */
+
+.card {
+	box-shadow: none;
+	padding: 2rem;
+	background-color: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+}
+.tag {
+	display: inline-flex;
+	align-items: center;
+	border-radius: 999px;
+	padding: .4rem 1rem !important;
+	color: var(--muted);
+	border-color: var(--border);
+	background-color: var(--surface-alt);
+}
+.tag + .tag {
+	margin-left: .5rem;
+}
 .warning {
-	padding: 1rem;
-	margin: 1rem 0;
-	border: .5rem solid #cc0;
+	padding: 1.5rem 2rem;
+	margin: 2rem 0;
+	border: 1px solid #cc0;
+	border-left: .4rem solid #cc0;
+	border-radius: var(--radius);
+	background-color: rgba(204, 204, 0, .07);
 }
 .warning::before {
 	content: '⚠️ ';
@@ -150,10 +449,9 @@ code {
 .hidden {
 	display: none !important;
 }
-.title {
-	font-size: 6rem;
-	text-align: center;
-	margin: 6rem;
+.tight {
+	max-width: 70ch;
+	margin: 0 auto;
 }
 .center {
 	text-align: center;
@@ -161,65 +459,33 @@ code {
 .b {
 	font-weight: bold;
 }
-.card {
-	box-shadow: none;
-	border: solid .25rem var(--color-grey)
-}
 
-/* Borders match the table below and the corners meet it, so the box reads as
-   part of the table rather than as a stray search field. */
-.table-filter {
-	margin: 2rem 0 0 0;
-	border: .1em solid var(--font-color) !important;
-	border-radius: .4rem .4rem 0 0 !important;
-	padding: .8rem 1rem .8rem 4.6rem !important;
-	color: var(--font-color);
-	background-color: var(--bg-color);
-	background-repeat: no-repeat;
-	background-position: 1.2rem center;
-	background-size: 2.2rem;
-	/* stroke is baked in: currentColor does not resolve inside a background-image */
-	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23747681' stroke-width='3' stroke-linecap='round' stroke-linejoin='round' class='feather feather-filter'%3E%3Cpolygon points='22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3'%3E%3C/polygon%3E%3C/svg%3E");
-}
-.table-filter:focus {
-	border-color: var(--color-primary) !important;
-}
-.table-filter::placeholder {
-	color: var(--color-lightGrey);
-	opacity: 1; /* Firefox dims placeholders by default */
-}
-.table-filter + table {
-	margin-top: 0;
-}
-body.highcontrast .table-filter {
-	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round' class='feather feather-filter'%3E%3Cpolygon points='22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3'%3E%3C/polygon%3E%3C/svg%3E");
-}
-body.highcontrast .table-filter::placeholder {
-	color: white;
-}
-
-.result {
-	margin-bottom: 2em;
-	border: solid 1px var(--font-color);
-	padding: 1em;
-}
-.searchtitle {
-	font-size: 2em;
-}
+/* Footer */
 
 footer {
-	color: var(--font-color);
+	color: var(--muted);
 	width: 100%;
-	background-color: var(--brand-color);
-	padding: 2rem;
-	margin: 2rem 0 0 0;
+	background-color: var(--surface);
+	border-top: 1px solid var(--border);
+	padding: 2.5rem;
+	margin-top: auto;
+	font-size: .9em;
+}
+footer > div {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 1rem 2rem;
+	justify-content: space-between;
+	max-width: 118rem;
+	margin: 0 auto;
 }
 footer a {
-	color: var(--font-color);
+	color: var(--muted);
 	text-decoration: underline;
+	text-underline-offset: .25em;
 }
-footer .right {
-	float: right;
+footer a:hover {
+	color: var(--accent);
 }
 
 /* Chota madness */
@@ -228,22 +494,89 @@ thead, tfoot {
 	border: 0 !important;
 }
 
-/* Icons */
+/* Icons. Masked pseudo-elements rather than background-image: currentColor does
+   not resolve inside a data URI, so a background-image icon cannot follow the
+   theme, and painting the mask on the element itself would clip its own
+   background away. */
 
 .i {
-	background-position: center;
-	background-repeat: no-repeat;
-	background-origin: content-box;
-	background-size: cover;
-	width: 4rem;
-	height: 4rem;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	transition: color .15s ease, border-color .15s ease;
+}
+.i::before,
+.win-aero::before,
+.win-flat::before,
+.win-modern::before {
+	content: '';
+	flex: none;
+	width: 2.2rem;
+	height: 2.2rem;
+	background-color: currentColor;
+	-webkit-mask-image: var(--icon);
+	mask-image: var(--icon);
+	-webkit-mask-repeat: no-repeat;
+	mask-repeat: no-repeat;
+	-webkit-mask-position: center;
+	mask-position: center;
+	-webkit-mask-size: contain;
+	mask-size: contain;
 }
 .i-search {
-	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='3' stroke-linecap='round' stroke-linejoin='round' class='feather feather-search'%3E%3Ccircle cx='11' cy='11' r='8'%3E%3C/circle%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'%3E%3C/line%3E%3C/svg%3E");
+	--icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'%3E%3C/circle%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'%3E%3C/line%3E%3C/svg%3E");
 }
 .i-sun {
-	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='3' stroke-linecap='round' stroke-linejoin='round' class='feather feather-sun'%3E%3Ccircle cx='12' cy='12' r='5'%3E%3C/circle%3E%3Cline x1='12' y1='1' x2='12' y2='3'%3E%3C/line%3E%3Cline x1='12' y1='21' x2='12' y2='23'%3E%3C/line%3E%3Cline x1='4.22' y1='4.22' x2='5.64' y2='5.64'%3E%3C/line%3E%3Cline x1='18.36' y1='18.36' x2='19.78' y2='19.78'%3E%3C/line%3E%3Cline x1='1' y1='12' x2='3' y2='12'%3E%3C/line%3E%3Cline x1='21' y1='12' x2='23' y2='12'%3E%3C/line%3E%3Cline x1='4.22' y1='19.78' x2='5.64' y2='18.36'%3E%3C/line%3E%3Cline x1='18.36' y1='5.64' x2='19.78' y2='4.22'%3E%3C/line%3E%3C/svg%3E");
+	--icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='5'%3E%3C/circle%3E%3Cline x1='12' y1='1' x2='12' y2='3'%3E%3C/line%3E%3Cline x1='12' y1='21' x2='12' y2='23'%3E%3C/line%3E%3Cline x1='4.22' y1='4.22' x2='5.64' y2='5.64'%3E%3C/line%3E%3Cline x1='18.36' y1='18.36' x2='19.78' y2='19.78'%3E%3C/line%3E%3Cline x1='1' y1='12' x2='3' y2='12'%3E%3C/line%3E%3Cline x1='21' y1='12' x2='23' y2='12'%3E%3C/line%3E%3Cline x1='4.22' y1='19.78' x2='5.64' y2='18.36'%3E%3C/line%3E%3Cline x1='18.36' y1='5.64' x2='19.78' y2='4.22'%3E%3C/line%3E%3C/svg%3E");
 }
 .i-moon {
-	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='3' stroke-linecap='round' stroke-linejoin='round' class='feather feather-moon'%3E%3Cpath d='M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z'%3E%3C/path%3E%3C/svg%3E");
+	--icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z'%3E%3C/path%3E%3C/svg%3E");
+}
+
+/* Release tags carry the logo of their era: the Aero flag (up to 7), the flat
+   tilted flag (8 to 10), and the straight panes of 11. The gutters between the
+   panes are 3 units wide on a 24 viewBox; below that they fall under a pixel at
+   this size and the four panes fuse into one blob. */
+.win-aero::before,
+.win-flat::before,
+.win-modern::before {
+	width: 1.5rem;
+	height: 1.5rem;
+	margin-right: .6rem;
+}
+/* All three glyphs share a layout: panes 9 wide by 8 tall, a 3 unit gutter
+   between the columns and 2.6 between the rows. The Aero flag waves against
+   that grid, its left panes arcing up and its right panes arcing down. */
+.win-aero {
+	--icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M1.5 3.9C4.5 2 7.5 1.6 10.5 2.9V10.9C7.5 9.6 4.5 10 1.5 11.9Z'/%3E%3Cpath d='M13.5 2.6C16.5 3.9 19.5 3.5 22.5 1.6V9.6C19.5 11.5 16.5 11.9 13.5 10.6Z'/%3E%3Cpath d='M1.5 14.5C4.5 12.6 7.5 12.2 10.5 13.5V21.5C7.5 20.2 4.5 20.6 1.5 22.5Z'/%3E%3Cpath d='M13.5 13.2C16.5 14.5 19.5 14.1 22.5 12.2V20.2C19.5 22.1 16.5 22.5 13.5 21.2Z'/%3E%3C/svg%3E");
+}
+/* Perspective rather than shear: the flag opens toward the right, so the panes
+   are not congruent. Height runs 15 units at the left edge to 21 at the right,
+   about a fixed horizontal centre, and the row gutter widens with it. */
+.win-flat {
+	--icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M1.5 4.5L10.5 3.21L10.5 10.86L1.5 11.03Z'/%3E%3Cpath d='M13.5 2.79L22.5 1.5L22.5 10.64L13.5 10.8Z'/%3E%3Cpath d='M1.5 12.98L10.5 13.14L10.5 20.79L1.5 19.5Z'/%3E%3Cpath d='M13.5 13.2L22.5 13.36L22.5 22.5L13.5 21.21Z'/%3E%3C/svg%3E");
+}
+.win-modern {
+	--icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Crect x='2.4' y='2.4' width='8.6' height='8.6' rx='1'/%3E%3Crect x='13.4' y='2.4' width='8.6' height='8.6' rx='1'/%3E%3Crect x='2.4' y='13.4' width='8.6' height='8.6' rx='1'/%3E%3Crect x='13.4' y='13.4' width='8.6' height='8.6' rx='1'/%3E%3C/svg%3E");
+}
+
+@media screen and (max-width: 599px) {
+	.content {
+		padding: 0 1.5rem 4rem;
+	}
+	.hero {
+		margin: 4rem auto;
+	}
+	.title { font-size: 3.2rem; }
+	h1 { font-size: 2.8rem; }
+	h2 { font-size: 2.2rem; }
+	table th, table td {
+		padding: .8rem;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	* {
+		transition: none !important;
+	}
 }

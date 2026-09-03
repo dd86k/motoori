@@ -4,16 +4,15 @@ var themeButton = document.getElementById('theme-button');
 var themeMenu = document.getElementById('theme-menu');
 var opened = false;
 
-// template engine messes up quotes
-function applyTheme(theme) {
-	document.body.classList.remove('dark', 'highcontrast', 'light');
-	document.body.classList.add(theme);
-	localStorage.setItem('theme', theme);
+// applyTheme comes from the inline script in <head>: the theme class has to be
+// on <html> before the first paint, which is long before this file runs.
+function selectTheme(theme) {
+	applyTheme(theme);
 	closeMenu();
 }
-function applyThemeLight()	{ applyTheme('light'); }
-function applyThemeDark()	{ applyTheme('dark'); }
-function applyThemeHighConstrast()	{ applyTheme('highcontrast'); }
+function applyThemeLight()	{ selectTheme('light'); }
+function applyThemeDark()	{ selectTheme('dark'); }
+function applyThemeHighConstrast()	{ selectTheme('highcontrast'); }
 
 function openMenu() {
 	opened = true;
@@ -31,25 +30,4 @@ function toggleThemeMenu() {
 		openMenu();
 }
 
-function themeInit() {
-	themeButton.classList.remove('hidden'); // js available
-	
-	var theme = localStorage.getItem('theme');
-	
-	if (theme) {
-		applyTheme(theme);
-		return;
-	}
-	
-	if (!window.matchMedia)
-		return;
-	
-	if (window.matchMedia('(prefers-color-scheme: light)').matches) {
-		applyTheme('light');
-		return;
-	}
-	
-	applyTheme('dark');
-}
-
-themeInit();
+themeButton.classList.remove('hidden'); // js available
