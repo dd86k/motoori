@@ -130,10 +130,10 @@ immutable string THEME_BOOTSTRAP = `<script>`~
 // drifted apart, and one of them was spelled `tittle` and so expanded nothing.
 // The error-code type names (Win32, HRESULT, NTSTATUS, LSTATUS) are deliberately
 // absent — they are names rather than contractions, and /windows/error-types
-// defines each one at length.
+// defines each one at length. DLL and MUI are absent for the opposite reason:
+// /windows/modules spells both out in prose, which explains more than a tooltip.
 enum ABBR_API   = `<abbr title="Application Programming Interface">API</abbr>`;
 enum ABBR_COM   = `<abbr title="Component Object Model">COM</abbr>`;
-enum ABBR_DLL   = `<abbr title="Dynamic-Link Library">DLL</abbr>`;
 enum ABBR_JSON  = `<abbr title="JavaScript Object Notation">JSON</abbr>`;
 enum ABBR_MSVC  = `<abbr title="Microsoft Visual C++">MSVC</abbr>`;
 enum ABBR_OEDB  = `<abbr title="Online Error Database">OEDB</abbr>`;
@@ -993,7 +993,7 @@ int main(string[] args)
                 `<p>`~
                 `Runtimes are frameworks that provide an environment for user `~
                 `code to use various utility functions. The C programming language `~
-                `environment comes with what's know as the C Runtime ("CRT" for short).`~
+                `environment comes with what's known as the C Runtime ("CRT" for short).`~
                 `</p>`
             );
             
@@ -1082,7 +1082,7 @@ int main(string[] args)
                 `<p>`~
                 `The online database contains error codes, symbolic names, `~
                 `descriptions, and messages from various official Microsoft `~
-                `sources, including the modules availble on the operating system.`~
+                `sources, including the modules available on the operating system.`~
                 `</p>`~
                 `<p>`~
                 `All error code values and structure tables described in the Windows pages `~
@@ -1091,7 +1091,7 @@ int main(string[] args)
                 `</p>`~
                 `<p>`~
                 `The different error code types are listed below. The `~
-                `following links details each type of error codes seen across the `~
+                `following links detail each type of error codes seen across the `~
                 `Windows ecosystem.`~
                 `</p>`
             );
@@ -1352,12 +1352,19 @@ int main(string[] args)
                 `<p class="breadcrumb"><a href="/windows/">Windows</a> / Modules</p>`~
                 `<h1>Windows Modules</h1>`~
                 `<p>`~
-                `Also known as a dynamic library, or in the context of Windows, a `~ABBR_DLL~`, `~
-                `a module, that can be dynamically loaded onto memory, that may contain `~
-                `code and resources. Resources include images, pieces of texts (strings), `~
-                `certificates, and more.`~
+                `A module is a file holding code and resources. On Windows, most are `~
+                `Dynamic-Link Libraries (DLL files), loaded into memory on demand by `~
+                `whatever program needs them. Other systems call these shared libraries. `~
+                `A few of the modules listed below are executables, drivers, or control `~
+                `panel items instead.`~
                 `</p>`~
-                `<p>Some modules listed below may include executable images (.exe files).</p>`
+                `<p>`~
+                `Resources include images, certificates, and pieces of text. Error messages `~
+                `are one such resource. On modern Windows they are not stored in the module `~
+                `itself: each module's messages sit beside it in a Multilingual User `~
+                `Interface (MUI) file, one per language. The entries below were read from `~
+                `the English MUI of each module.`~
+                `</p>`
             );
             
             putTableFilter(buffer, "modules", "Filter modules");
