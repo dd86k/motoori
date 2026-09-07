@@ -193,6 +193,52 @@ const(char)[] getOSVersion()
     return getOSInfo().build;
 }
 
+/// What the header dataset already defines, for extractors mapping a symbolic
+/// name onto it.
+struct HeaderSymbolics
+{
+    string[string] headers; /// Symbolic name to the header defining it
+    uint[string] codes;     /// Symbolic name to its code
+}
+
+/// Read the symbolic names out of a generated headers.json.
+HeaderSymbolics readHeaderSymbolics(string path)
+{
+    import std.json : JSONValue, parseJSON;
+
+    JSONValue j = parseJSON(cast(const(char)[])readfile(path));
+    HeaderSymbolics known;
+
+    const(JSONValue) *jheaders = "headers" in j;
+    if (jheaders is null)
+        throw new Exception("No headers in '"~path~"'");
+
+    foreach (const(JSONValue) jheader; jheaders.array)
+    {
+        string name = jheader["name"].str;
+
+        const(JSONValue) *jsymbolics = "symbolics" in jheader;
+        if (jsymbolics is null)
+            continue;
+
+        foreach (const(JSONValue) jsym; jsymbolics.array)
+        {
+            string symbolic = jsym["name"].str;
+            if (symbolic in known.headers) // first definition wins, as the site does
+                continue;
+
+            uint code = void;
+            if (parseCode(jsym["id"].str, code) == false)
+                continue;
+
+            known.headers[symbolic] = name;
+            known.codes[symbolic] = code;
+        }
+    }
+
+    return known;
+}
+
 import core.stdc.stdio : sscanf;
 
 bool parseCode(const(char)[] input, out uint code)

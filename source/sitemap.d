@@ -1,8 +1,9 @@
 /// XML sitemap generation.
 ///
 /// Only hub pages are listed: the front page, the section and listing pages,
-/// one entry per Windows header and module, and one per symbolic name carrying
-/// a documentation article, those being the only ones with prose of their own.
+/// one entry per Windows header, module and Win32 code listing, and one per
+/// symbolic name carrying a documentation article, those being the only ones
+/// with prose of their own.
 /// The other ~75,000 symbolic-name and code pages are left out on purpose.
 /// Every one of them is reachable within three clicks of the front page, so a
 /// sitemap buys no discovery there, and submitting them would bury the pages
@@ -32,6 +33,7 @@ static immutable string[] SITEMAP_PAGES = [
     "/windows/modules",
     "/windows/headers",
     "/windows/bugcodes",
+    "/windows/win32",
     "/crt/",
     "/crt/msvc",
     "/crt/gnu",
@@ -63,6 +65,8 @@ void putSitemap(ref HTTPReply buffer, const(char)[] origin)
         putURL(buffer, origin, "/windows/module/", mod.name);
     foreach (ref WindowsDoc doc; databaseWindowsDocs())
         putURL(buffer, origin, "/windows/error/", doc.key);
+    foreach (ref Win32Doc doc; databaseWin32Docs())
+        putURL(buffer, origin, "/windows/win32/", doc.key);
 
     buffer.put(`</urlset>`);
 }
@@ -91,7 +95,8 @@ HTTPServer addSitemapRoutes(HTTPServer http)
     size_t estimate = SITEMAP_PAGES.length
         + databaseWindowsHeaders().length
         + databaseWindowsModules().length
-        + databaseWindowsDocs().length;
+        + databaseWindowsDocs().length
+        + databaseWin32Docs().length;
 
     return http.addRoute("GET", "/sitemap.xml", (ref HTTPRequest req)
     {

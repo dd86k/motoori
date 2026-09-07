@@ -133,6 +133,25 @@ Table extractTable(const(char)[][] lines, ref LinkResolver links, out TableRange
     return Table.init;
 }
 
+/// Every table in the lines given, in document order.
+Table[] extractTables(const(char)[][] lines, ref LinkResolver links)
+{
+    Table[] tables;
+
+    for (size_t at; at < lines.length; )
+    {
+        TableRange range = void;
+        Table tbl = extractTable(lines[at..$], links, range);
+        if (tbl.empty())
+            break;
+
+        tables ~= tbl;
+        at += range.end > range.start ? range.end : range.start + 1;
+    }
+
+    return tables;
+}
+
 /// Escape text for use in HTML content.
 string escapeHTML(const(char)[] text)
 {

@@ -147,6 +147,12 @@ void databaseLoadFromFolder(string base)
     else
         stderr.writeln("warning: no documentation found in '", dirWindows, "'");
 
+    string win32path = buildPath(dirWindows, "win32-docs.json");
+    if (exists(win32path))
+        databaseLoadWin32Docs(win32path);
+    else
+        stderr.writeln("warning: no Win32 code listings found in '", dirWindows, "'");
+
     // Make up merged error stuff from Windows headers and modules.
     // 1. Make error entries out of every module error codes
     // 2. Update error entries with their symbolic name if available
@@ -770,6 +776,266 @@ WindowsDoc databaseWindowsDocByName(const(char)[] name)
 }
 
 //
+// Win32 documentation
+//
+
+/// A constant, as one of the Win32 code listings writes it
+struct Win32Entry
+{
+    string key;     /// Lowercase name for searching
+    string name;
+    uint id;        /// Value, when the listing gives one
+    string origId;  /// Value as the listing writes it, null when it gives none
+    string decId;   /// Value formatted as decimal
+    string description;
+    bool defined;   /// Whether a header already carries this name
+}
+
+/// An error, status or return code listing from the Win32 documentation
+struct Win32Doc
+{
+    string key;     /// Slug the listing is served under
+    string title;
+    string description; /// Plain text summary
+    string header;  /// Header the listing belongs to, null when it names none
+    string url;     /// Article on learn.microsoft.com
+    string html;    /// Prose above the listing, rendered
+    Win32Entry[] entries;
+}
+
+// Where one name is documented. A name can be listed by more than one article,
+// so the lookups hand back every place it turns up.
+private struct Win32Ref
+{
+    string key;
+    uint id;
+    uint doc;
+    uint entry;
+}
+
+/// One constant in the listing that documents it
+struct Win32Result
+{
+    Win32Doc doc;
+    Win32Entry entry;
+}
+
+private void databaseLoadWin32Docs(string path)
+{
+    const(char)[] source = readSource(path);
+    scope(exit) releaseSource(source);
+    JSONReader reader = JSONReader(source);
+
+    const(char)[] key = void;
+
+    reader.enterObject();
+    while (reader.readKey(key))
+    {
+        if (key != "docs")
+        {
+            reader.skipValue();
+            continue;
+        }
+
+        reader.enterArray();
+        while (reader.nextElement())
+            data_win32_docs ~= readWin32Doc(reader);
+    }
+
+    sort!("a.key < b.key")(data_win32_docs);
+
+    // Which names are new is what the listings are here for, and the answer is
+    // only knowable once the headers are in. The set goes away with the load.
+    bool[string] defined;
+    foreach (ref WindowsHeader header; data_windows_headers)
+    {
+        foreach (ref WindowsSymbolic sym; header.symbolics)
+            defined[sym.key] = true;
+    }
+
+    size_t total;
+    foreach (size_t d, ref Win32Doc doc; data_win32_docs)
+    {
+        foreach (size_t e, ref Win32Entry entry; doc.entries)
+        {
+            entry.defined = (entry.key in defined) !is null;
+            data_win32_index ~= Win32Ref(entry.key, entry.id, cast(uint)d, cast(uint)e);
+
+            // A name a header already defines is looked up under that header,
+            // whose code is the one to trust: a handful of articles print a
+            // value their own header disagrees with.
+            if (entry.defined == false && entry.origId.length)
+                data_win32_codes ~= Win32Ref(entry.key, entry.id, cast(uint)d, cast(uint)e);
+        }
+
+        total += doc.entries.length;
+    }
+
+    sort!("a.key < b.key")(data_win32_index);
+    sort!("a.id < b.id")(data_win32_codes);
+
+    statistics.win32DocCount = data_win32_docs.length;
+    statistics.win32EntryCount = total;
+}
+
+private Win32Doc readWin32Doc(ref JSONReader reader)
+{
+    Win32Doc doc;
+    const(char)[] key = void;
+
+    reader.enterObject();
+    while (reader.readKey(key))
+    {
+        switch (key) {
+        case "key":         doc.key         = arenaDup(reader.readString()); break;
+        case "title":       doc.title       = arenaDup(reader.readString()); break;
+        case "description": doc.description = arenaDup(reader.readString()); break;
+        case "header":      doc.header      = arenaDup(reader.readString()); break;
+        case "url":         doc.url         = arenaDup(reader.readString()); break;
+        case "html":        doc.html        = arenaDup(reader.readString()); break;
+        case "entries":
+            reader.enterArray();
+            while (reader.nextElement())
+                doc.entries ~= readWin32Entry(reader);
+            break;
+        default:
+            reader.skipValue();
+        }
+    }
+
+    return doc;
+}
+
+private Win32Entry readWin32Entry(ref JSONReader reader)
+{
+    Win32Entry entry;
+    const(char)[] key = void;
+
+    reader.enterObject();
+    while (reader.readKey(key))
+    {
+        switch (key) {
+        case "name":
+            entry.name = arenaDup(reader.readString());
+            entry.key  = arenaLower(entry.name);
+            break;
+        case "code":
+            entry.origId = arenaDup(reader.readString());
+            break;
+        case "description":
+            entry.description = arenaDup(reader.readString());
+            break;
+        default:
+            reader.skipValue();
+        }
+    }
+
+    // Plenty of constants are documented without one, so a missing value is
+    // not the error a missing value is anywhere else in the database. One the
+    // article mistyped is dropped rather than kept as a zero, which would file
+    // the name under a code it has nothing to do with.
+    if (entry.origId.length)
+    {
+        if (parseCode(entry.origId, entry.id))
+        {
+            entry.decId = arenaText(entry.id);
+        }
+        else
+        {
+            stderr.writeln("warning: ", entry.name, " has an unreadable code '", entry.origId, "'");
+            entry.origId = null;
+            entry.id = 0;
+        }
+    }
+
+    return entry;
+}
+
+// Get all listings, by slug
+Win32Doc[] databaseWin32Docs()
+{
+    return data_win32_docs;
+}
+
+// Get a listing by its slug
+Win32Doc databaseWin32Doc(const(char)[] key)
+{
+    size_t low;
+    size_t high = data_win32_docs.length;
+
+    while (low < high)
+    {
+        size_t mid = low + ((high - low) / 2);
+        if (data_win32_docs[mid].key < key)
+            low = mid + 1;
+        else if (data_win32_docs[mid].key > key)
+            high = mid;
+        else
+            return data_win32_docs[mid];
+    }
+
+    static immutable Win32Doc empty;
+    return cast()empty;
+}
+
+/// Every listing documenting a symbolic name. Reused buffer, see search().
+Win32Result[] databaseWin32ByName(const(char)[] name)
+{
+    char[256] keybuf = void;
+    const(char)[] key = toLowerBuf(keybuf, name);
+
+    static Win32Result[] results;
+    results.length = 0;
+    results.assumeSafeAppend();
+
+    size_t at = lowerBound!("a.key < b")(data_win32_index, key);
+    for (; at < data_win32_index.length && data_win32_index[at].key == key; ++at)
+        results ~= win32Result(data_win32_index[at]);
+
+    return results;
+}
+
+/// Constants carrying a code that no header defines. Reused buffer, see search().
+Win32Result[] databaseWin32ByCode(uint code)
+{
+    static Win32Result[] results;
+    results.length = 0;
+    results.assumeSafeAppend();
+
+    size_t at = lowerBound!("a.id < b")(data_win32_codes, code);
+    for (; at < data_win32_codes.length && data_win32_codes[at].id == code; ++at)
+        results ~= win32Result(data_win32_codes[at]);
+
+    return results;
+}
+
+private Win32Result win32Result(ref Win32Ref found)
+{
+    Win32Doc doc = data_win32_docs[found.doc];
+    return Win32Result(doc, doc.entries[found.entry]);
+}
+
+// First index whose element is not below the value, the usual half-open form
+private size_t lowerBound(alias less, T, K)(T[] sorted, K value)
+{
+    import std.functional : binaryFun;
+
+    size_t low;
+    size_t high = sorted.length;
+
+    while (low < high)
+    {
+        size_t mid = low + ((high - low) / 2);
+        if (binaryFun!less(sorted[mid], value))
+            low = mid + 1;
+        else
+            high = mid;
+    }
+
+    return low;
+}
+
+//
 // CRT facilities
 //
 
@@ -874,7 +1140,9 @@ struct DatabaseStatistics
     size_t windowsSymbolicCount; // symbolic names + code
     size_t windowsModuleErrorCount; // errors from module
     size_t windowsDocCount; // documented bug checks and problem codes
-    
+    size_t win32DocCount;   // Win32 code listings
+    size_t win32EntryCount; // constants those listings carry
+
     size_t totalMessageCount;
 }
 DatabaseStatistics databaseStatistics()
@@ -1035,6 +1303,19 @@ SearchResult[] search(string input)
             return results;
     }
     
+    // Only the names no header defines: the rest were already offered above,
+    // under the header that is authoritative for them.
+    foreach (ref win32doc; data_win32_docs)
+    foreach (ref entry; win32doc.entries)
+    {
+        if (entry.defined || (iscode && entry.origId.length == 0))
+            continue;
+
+        with (entry)
+        if (process(id, name, description, "windows-win32", win32doc.title))
+            return results;
+    }
+
     // for code, check error code
     // for text, check message
     foreach (ref crt; data_crt)
@@ -1110,6 +1391,9 @@ WindowsHeader[] data_windows_headers;
 WindowsModule[] data_windows_modules;
 WindowsRelease[] data_windows_releases;
 WindowsDoc[] data_windows_docs;
+Win32Doc[] data_win32_docs;
+Win32Ref[] data_win32_index; // by name
+Win32Ref[] data_win32_codes; // by code, names no header defines
 
 SysTime data_timestamp;
 

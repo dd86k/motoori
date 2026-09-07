@@ -35,8 +35,9 @@ dub.selections.json
 # Default folders
 data/
 
-# Documentation checkout, read by --generate-windows-docs
+# Documentation checkouts, read by --generate-windows-docs and --generate-win32-docs
 windows-driver-docs/
+win32/
 
 # Personal
 perso/

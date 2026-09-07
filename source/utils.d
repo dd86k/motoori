@@ -315,6 +315,30 @@ unittest
     assert(limit("", 4) == "");
 }
 
+/// Write text from a data file into the page body.
+///
+/// Most descriptions are plain prose, but a few quote a placeholder in angle
+/// brackets ("the <message> macro was not found"), which a browser would take
+/// for a tag and swallow.
+void putText(ref HTTPReply buffer, const(char)[] text)
+{
+    foreach (char c; text)
+    {
+        switch (c) {
+        case '<':  buffer.put("&lt;");   break;
+        case '>':  buffer.put("&gt;");   break;
+        case '&':  buffer.put("&amp;");  break;
+        default:   buffer.put(c);        break;
+        }
+    }
+}
+unittest
+{
+    HTTPReply reply = HTTPReply.create(128);
+    putText(reply, "The <message> macro & the rest");
+    assert(reply[] == "The &lt;message&gt; macro &amp; the rest");
+}
+
 /// Write text into a content="" attribute: whitespace collapsed, escaped, and
 /// cut to a length a search result can show.
 void putSummary(ref HTTPReply buffer, const(char)[] text)

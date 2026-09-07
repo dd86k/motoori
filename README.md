@@ -36,6 +36,8 @@ Requirements:
   - Alpine Linux is a well supported choice.
 - A checkout of [windows-driver-docs](https://github.com/MicrosoftDocs/windows-driver-docs)
   for the bug check and Device Manager problem code articles.
+- A checkout of [win32](https://github.com/MicrosoftDocs/win32) for the error,
+  status and return code listings.
 
 Suggestions:
 - VirtualBox with a shared folders setup.
@@ -51,6 +53,9 @@ Steps:
    `extract --generate-windows-docs=windows-driver-docs`
    - Run this after step 5: the symbolic names come out of `headers.json`,
      which the extractor reports mismatches against.
+8. To build the Win32 code listings, clone the docs and run
+   `extract --generate-win32-docs=win32`
+   - Also after step 5, and for the same reason.
 
 Should have most things. Do note that different versions of Windows will have
 different module versions.

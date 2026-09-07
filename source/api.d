@@ -512,7 +512,7 @@ void putResultURL(ref HTTPReply buffer, ref SearchResult result)
     case "windows-module":
         url = sformat(urlbuf, "/windows/code/%s", result.origId);
         break;
-    case "windows-symbol":
+    case "windows-symbol", "windows-win32":
         url = sformat(urlbuf, "/windows/error/%s", result.origId);
         break;
     case "crt":

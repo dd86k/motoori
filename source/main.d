@@ -455,17 +455,97 @@ void putWindowsDoc(ref HTTPReply buffer, ref WindowsDoc doc)
     buffer.put(doc.html);
     buffer.put(`</div>`);
 
-    // The text is Microsoft's, and the licence asks for the credit
+    putDocSource(buffer, doc.url, "Windows driver documentation");
+}
+
+// Credit line for text taken out of a Microsoft documentation repository, which
+// the licence asks for.
+void putDocSource(ref HTTPReply buffer, string url, string corpus)
+{
     buffer.writef(
         `<p class="doc-source">`~
-        `Article text from the <a href="%s" target="_blank" rel="noopener">Windows driver documentation`~
+        `Article text from the <a href="%s" target="_blank" rel="noopener">%s`~
         `<span class="visually-hidden"> (opens in a new tab)</span></a>, `~
         `by Microsoft, under the `~
         `<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0`~
         `<span class="visually-hidden"> (opens in a new tab)</span></a> licence.`~
         `</p>`,
-        doc.url
+        url, corpus
     );
+}
+
+// A listing can name a header the dataset never covered, and the name is worth
+// showing either way, just not as a link to a page that is not there.
+void putHeaderRef(ref HTTPReply buffer, string header)
+{
+    if (databaseWindowsHeader(header).name.length)
+        buffer.writef(`<a href="/windows/header/%s">%s</a>`, header, header);
+    else
+        buffer.put(header);
+}
+
+// What the Win32 documentation says about a name, written under whatever the
+// headers and modules had to say about it. A name can be listed by more than one
+// article, and where it is, the listings rarely word it the same way.
+void putWin32Entries(ref HTTPReply buffer, Win32Result[] found)
+{
+    if (found.length == 0)
+        return;
+
+    buffer.put(`<h2>Documented in Win32</h2>`);
+    foreach (ref Win32Result result; found)
+    {
+        buffer.writef(`<p><a href="/windows/win32/%s">%s</a>`,
+            result.doc.key, result.doc.title);
+        if (result.doc.header.length)
+            buffer.writef(` (%s)`, result.doc.header);
+
+        // Only worth printing where it adds something: the page already leads
+        // with the code the header gives, and a few articles disagree with it.
+        if (result.entry.origId.length)
+            buffer.writef(` &middot; %s`, result.entry.origId);
+        buffer.put(`</p>`);
+
+        if (result.entry.description.length)
+        {
+            buffer.put(`<p>`);
+            putText(buffer, result.entry.description);
+            buffer.put(`</p>`);
+        }
+    }
+}
+
+// A symbolic page for a name only the Win32 documentation carries: the listing
+// entry is all there is, so it stands in for the header and message parts.
+void pageWin32Symbol(ref HTTPReply buffer, Win32Result[] found)
+{
+    Win32Entry entry = found[0].entry;
+
+    buffer.writef(
+        `<p class="breadcrumb">`~
+        `<a href="/windows/">Windows</a> / `~
+        `<a href="/windows/win32">Win32</a> / `~
+        `%s</p>`~
+        `<h1>%s</h1>`,
+        entry.name, entry.name
+    );
+
+    if (entry.origId.length)
+    {
+        char[32] codebuf = void;
+        buffer.writef(`<p>Code: <a href="/windows/code/%s">%s</a> (%s)</p>`,
+            sformatWindowsCodeURL(codebuf, entry.id), entry.origId, entry.decId);
+        putWindowsCodeDecoding(buffer, entry.id);
+    }
+    else
+    {
+        // Return values and hit test results are documented without one, and a
+        // page that stayed silent about it would read as though the code were
+        // missing from the database instead.
+        buffer.put(`<p>The documentation lists this name without a value.</p>`);
+    }
+
+    putWin32Entries(buffer, found);
 }
 
 /// One row of the bug code listing
@@ -1245,6 +1325,7 @@ int main(string[] args)
             buffer.put(`<li><a href="/windows/modules">List by module</a></li>`);
             buffer.put(`<li><a href="/windows/headers">List by header</a></li>`);
             buffer.put(`<li><a href="/windows/bugcodes">Bug check codes, by subsystem</a></li>`);
+            buffer.put(`<li><a href="/windows/win32">Win32 code listings</a></li>`);
             buffer.put(`</ul>`);
             buffer.put(
                 `<p>`~
@@ -1721,6 +1802,158 @@ int main(string[] args)
             collectPeriodically();
             return REQUEST_OK;
         })
+        .addRoute("GET", "/windows/win32", (ref HTTPRequest req)
+        {
+            Win32Doc[] docs = databaseWin32Docs();
+
+            size_t reserve = PAGE_MARKUP;
+            foreach (ref Win32Doc doc; docs)
+                reserve += doc.title.length + doc.description.length + ROW_MARKUP;
+
+            HTTPReply buffer = HTTPReply.create(reserve);
+
+            prepareHeader(buffer, req, "Win32 Code Listings | OEDB",
+                "The error, status and return code listings of the Win32 documentation, "~
+                "with the constants each one defines.",
+                "/windows/win32", ActiveTab.windows);
+
+            buffer.put(
+                `<p class="breadcrumb"><a href="/windows/">Windows</a> / Win32</p>`~
+                `<h1>Win32 Code Listings</h1>`~
+                `<p>`~
+                `The Win32 documentation groups its failure codes into reference articles, `~
+                `one per subsystem: the sockets errors in one, the WinINet ones in another, `~
+                `the COM ones spread across ten. Each is listed below with the header it `~
+                `belongs to, where it names one, and every constant it defines.`~
+                `</p>`~
+                `<p>`~
+                `These listings are the only source here for names that never reached a `~
+                `header dump, and they carry a sentence of prose for names that did.`~
+                `</p>`
+            );
+
+            putTableFilter(buffer, "win32", "Filter listings");
+            buffer.put(`<table class="table" id="win32">`);
+            buffer.put(`<thead><tr><th>Listing</th><th>Header</th><th>Codes</th></tr></thead>`);
+            buffer.put(`<tbody>`);
+
+            size_t total;
+            foreach (ref Win32Doc doc; docs)
+            {
+                total += doc.entries.length;
+
+                buffer.writef(`<tr><td><a href="/windows/win32/%s">%s</a></td><td>`,
+                    doc.key, doc.title);
+                if (doc.header.length)
+                    putHeaderRef(buffer, doc.header);
+                buffer.writef(`</td><td>%d</td></tr>`, doc.entries.length);
+            }
+
+            buffer.put(`</tbody>`);
+            buffer.writef(`<tfoot><tr><td colspan="3">%s %s, %s %s</td></tr></tfoot>`,
+                docs.length, plural(docs.length,"listing","listings"),
+                total, plural(total,"constant","constants"));
+            buffer.put(`</table>`);
+
+            prepareFooter(buffer, true);
+
+            req.reply(200, buffer, "text/html");
+            collectPeriodically();
+            return REQUEST_OK;
+        })
+        .addRoute("GET", "/windows/win32/:listing", (ref HTTPRequest req)
+        {
+            string qlisting = req.params["listing"];
+            if (qlisting.length == 0)
+                throw new HttpServerException(HTTPStatus.badRequest, HTTPMsg.badRequest, req);
+
+            char[256] keybuf = void;
+            const(char)[] key = toLowerBuf(keybuf, qlisting);
+            if (key is null)
+                throw new HttpServerException(HTTPStatus.badRequest, HTTPMsg.badRequest, req);
+
+            Win32Doc doc = databaseWin32Doc(key);
+            if (doc.key == string.init)
+                throw new HttpServerException(HTTPStatus.notFound, HTTPMsg.notFound, req);
+
+            size_t reserve = PAGE_MARKUP + doc.html.length;
+            foreach (ref Win32Entry entry; doc.entries)
+                reserve += entry.name.length + entry.description.length + ROW_MARKUP;
+
+            HTTPReply buffer = HTTPReply.create(reserve);
+
+            // Several listings are titled no more than "Error Messages", which
+            // only the header tells apart, and a tab or a search result has
+            // nothing else to go on
+            char[256] titlebuf = void;
+            char[256] canonbuf = void;
+            prepareHeader(buffer, req,
+                cast(string)(doc.header.length ?
+                    sformat(titlebuf, "%s (%s) | OEDB", doc.title, doc.header) :
+                    sformat(titlebuf, "%s | OEDB", doc.title)),
+                doc.description,
+                cast(string)sformat(canonbuf, "/windows/win32/%s", doc.key),
+                ActiveTab.windows);
+
+            buffer.writef(
+                `<p class="breadcrumb">`~
+                `<a href="/windows/">Windows</a> / `~
+                `<a href="/windows/win32">Win32</a> / `~
+                `%s</p>`~
+                `<h1>%s</h1>`,
+                doc.title, doc.title
+            );
+
+            if (doc.header.length)
+            {
+                buffer.put(`<p>Header: `);
+                putHeaderRef(buffer, doc.header);
+                buffer.put(`</p>`);
+            }
+
+            if (doc.html.length)
+            {
+                buffer.put(`<div class="doc">`);
+                buffer.put(doc.html);
+                buffer.put(`</div>`);
+            }
+
+            bool filter = doc.entries.length >= FILTER_MIN_ROWS;
+            if (filter)
+                putTableFilter(buffer, "codes", "Filter codes");
+
+            buffer.put(`<table class="table" id="codes">`);
+            buffer.put(`<thead><tr><th>Symbolic</th><th>Code</th><th>Description</th></tr></thead>`);
+            buffer.put(`<tbody>`);
+            foreach (ref Win32Entry entry; doc.entries)
+            {
+                buffer.writef(`<tr><td><a href="/windows/error/%s">%s</a></td><td>`,
+                    entry.key, entry.name);
+
+                if (entry.origId.length)
+                {
+                    char[32] codebuf = void;
+                    buffer.writef(`<a href="/windows/code/%s">%s</a>`,
+                        sformatWindowsCodeURL(codebuf, entry.id), entry.origId);
+                }
+
+                buffer.put(`</td><td>`);
+                putText(buffer, entry.description);
+                buffer.put(`</td></tr>`);
+            }
+            buffer.put(`</tbody>`);
+            buffer.writef(`<tfoot><tr><td colspan="3">%s %s</td></tr></tfoot>`,
+                doc.entries.length, plural(doc.entries.length,"entry","entries"));
+            buffer.put(`</table>`);
+
+            putDocSource(buffer, doc.url, "Win32 documentation");
+
+            prepareFooter(buffer, filter);
+
+            req.reply(200, buffer, "text/html");
+            collectPeriodically();
+            return REQUEST_OK;
+        })
         .addRoute("GET", "/search", (ref HTTPRequest req)
         {
             import std.datetime.stopwatch : StopWatch;
@@ -1776,6 +2009,11 @@ int main(string[] args)
                         break;
                     case "windows-symbol":
                         title_type = "Windows headers";
+                        url_title = cast(string)result.origId;
+                        url_code = cast(string)sformat(urlcodebuf, "/windows/error/%s", result.origId);
+                        break;
+                    case "windows-win32":
+                        title_type = "Win32 documentation";
                         url_title = cast(string)result.origId;
                         url_code = cast(string)sformat(urlcodebuf, "/windows/error/%s", result.origId);
                         break;
@@ -1986,6 +2224,7 @@ int main(string[] args)
             // Associated headers and modules
             SearchWindowsHeaderResult[] results_headers = searchWindowsHeadersByCode(code);
             SearchWindowsModuleResult[] results_modules = searchWindowsModulesByCode(code);
+            Win32Result[] results_win32 = databaseWin32ByCode(code);
             
             // "Proper" code as if MS would print it I guess
             char[32] formalbuf = void;
@@ -1998,6 +2237,9 @@ int main(string[] args)
             foreach (ref result; results_headers)
                 reserve += result.header.name.length + result.error.name.length +
                     result.error.message.length + ROW_MARKUP;
+            foreach (ref Win32Result result; results_win32)
+                reserve += result.doc.title.length + result.entry.name.length +
+                    result.entry.description.length + ROW_MARKUP;
 
             HTTPReply buffer = HTTPReply.create(reserve);
 
@@ -2089,6 +2331,35 @@ int main(string[] args)
                 count_headers, plural(count_headers,"entry","entries"));
             buffer.put(`</tfoot></table>`);
 
+            // Only the names no header carries: anything else is already a row
+            // in the table above, under the header that defines it.
+            if (results_win32.length)
+            {
+                buffer.put(`<h2>Documented in Win32</h2>`);
+                buffer.put(`<table>`);
+                buffer.put(`<thead><tr><th>Listing</th><th>Symbolic</th><th>Description</th></tr></thead>`);
+                buffer.put(`<tbody>`);
+                foreach (ref Win32Result result; results_win32)
+                {
+                    buffer.writef(`<tr><td><a href="/windows/win32/%s">%s</a>`,
+                        result.doc.key, result.doc.title);
+                    if (result.doc.header.length)
+                        buffer.writef(` (%s)`, result.doc.header);
+                    buffer.writef(
+                        `</td>`~
+                        `<td id="%s"><a href="/windows/error/%s">%s</a></td>`~
+                        `<td>`,
+                        result.entry.name, result.entry.key, result.entry.name
+                    );
+                    putText(buffer, result.entry.description);
+                    buffer.put(`</td></tr>`);
+                }
+                buffer.put(`</tbody><tfoot>`);
+                buffer.writef(`<tr><td colspan="3">%s %s</td></tr>`,
+                    results_win32.length, plural(results_win32.length,"entry","entries"));
+                buffer.put(`</tfoot></table>`);
+            }
+
             prepareFooter(buffer, filter_mods || filter_headers);
 
             req.reply(200, buffer, "text/html");
@@ -2109,22 +2380,43 @@ int main(string[] args)
             WindowsHeader winheader = void;
             WindowsSymbolic winsymbol = databaseWindowsSymbolicByName(symbolname, winheader);
             WindowsDoc windoc = databaseWindowsDocByName(symbolname);
+            Win32Result[] win32 = databaseWin32ByName(symbolname);
+
             if (winsymbol.name == string.init)
             {
-                if (windoc.name == string.init)
+                if (windoc.name == string.init && win32.length == 0)
                     throw new HttpServerException(HTTPStatus.notFound, HTTPMsg.notFound, req);
 
-                HTTPReply docbuffer = HTTPReply.create(PAGE_MARKUP + windoc.html.length);
+                size_t docreserve = PAGE_MARKUP + windoc.html.length;
+                foreach (ref Win32Result result; win32)
+                    docreserve += result.entry.description.length + ROW_MARKUP;
+
+                HTTPReply docbuffer = HTTPReply.create(docreserve);
+
+                // The name is only in one of the two, except where a bug check
+                // article and a listing happen to cover the same one
+                string docname = windoc.name.length ? windoc.name : win32[0].entry.name;
+                string dockey = windoc.name.length ? windoc.key : win32[0].entry.key;
+                const(char)[] docdesc = windoc.name.length ?
+                    windoc.description : win32[0].entry.description;
 
                 char[256] doctitlebuf = void;
                 char[256] doccanonbuf = void;
                 prepareHeader(docbuffer, req,
-                    cast(string)sformat(doctitlebuf, "%s | OEDB", windoc.name),
-                    windoc.description,
-                    cast(string)sformat(doccanonbuf, "/windows/error/%s", windoc.key),
+                    cast(string)sformat(doctitlebuf, "%s | OEDB", docname),
+                    docdesc,
+                    cast(string)sformat(doccanonbuf, "/windows/error/%s", dockey),
                     ActiveTab.windows);
 
-                pageWindowsDocSymbol(docbuffer, windoc);
+                if (windoc.name.length)
+                {
+                    pageWindowsDocSymbol(docbuffer, windoc);
+                    putWin32Entries(docbuffer, win32);
+                }
+                else
+                {
+                    pageWin32Symbol(docbuffer, win32);
+                }
 
                 prepareFooter(docbuffer);
 
@@ -2140,6 +2432,8 @@ int main(string[] args)
             size_t reserve = PAGE_MARKUP + winsymbol.message.length + windoc.html.length;
             foreach (ref mod; modules)
                 reserve += mod.module_.name.length + mod.error.message.length + rowmarkup;
+            foreach (ref Win32Result result; win32)
+                reserve += result.entry.description.length + ROW_MARKUP;
 
             HTTPReply buffer = HTTPReply.create(reserve);
 
@@ -2185,6 +2479,8 @@ int main(string[] args)
 
             if (windoc.name.length)
                 putWindowsDoc(buffer, windoc);
+
+            putWin32Entries(buffer, win32);
 
             if (modules.length)
             {

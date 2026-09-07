@@ -3,6 +3,7 @@ module extract.main;
 import std.stdio, std.file, std.getopt;
 import extract.source.crt : processCrtMessages;
 import extract.source.driverdocs : processDriverDocs;
+import extract.source.win32docs : processWin32Docs;
 import extract.source.windows;
 import core.stdc.stdlib : exit;
 import extract.platform;
@@ -94,12 +95,14 @@ void main(string[] args)
         GEN_WIN_HDR = 16,
         GEN_WIN_MOD = 32,
         GEN_WIN_DOCS = 64,
+        GEN_WIN32_DOCS = 128,
         GEN_ARCHIVE = 256,
         // Documentation is left out: it needs a checkout to point at, which
         // only the option taking that path can supply.
         GEN_ALL = GEN_CRT | GEN_WIN_HDR | GEN_WIN_MOD | GEN_ARCHIVE,
     }
     string odocsroot;
+    string owin32root;
     string olocatemui;
     bool olistmuis;
     string ocode;
@@ -131,6 +134,11 @@ void main(string[] args)
         (string _, string v) {
             odocsroot = v;
             ogenflags |= GEN_WIN_DOCS;
+        },
+        "generate-win32-docs", "Generate error code listings from a MicrosoftDocs/win32 checkout",
+        (string _, string v) {
+            owin32root = v;
+            ogenflags |= GEN_WIN32_DOCS;
         },
         "generate-all", "Generate all info possible",
         () {
@@ -208,6 +216,9 @@ void main(string[] args)
 
         if (ogenflags & GEN_WIN_DOCS)
             processDriverDocs(ooutdir, odocsroot);
+
+        if (ogenflags & GEN_WIN32_DOCS)
+            processWin32Docs(ooutdir, owin32root);
     }
     catch (Exception ex)
     {

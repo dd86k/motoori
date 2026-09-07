@@ -467,14 +467,12 @@ private void mapSymbolics(ref DriverDoc[] docs, string headerspath)
         return;
     }
 
-    uint[string] codes;
-    string[string] headers;
-    readSymbolics(headerspath, codes, headers);
+    HeaderSymbolics known = readHeaderSymbolics(headerspath);
 
     size_t mapped;
     foreach (ref DriverDoc doc; docs)
     {
-        string *header = doc.name in headers;
+        string *header = doc.name in known.headers;
         if (header is null)
             continue;
 
@@ -486,45 +484,13 @@ private void mapSymbolics(ref DriverDoc[] docs, string headerspath)
         if (doc.kind != "bugcheck")
             continue;
 
-        uint code = codes[doc.name];
+        uint code = known.codes[doc.name];
         if (code != doc.id)
             stderr.writefln("warning: %s is %#x in %s, %#x in %s",
                 doc.name, code, *header, doc.id, doc.path);
     }
 
     writefln("mapped %u of %u symbolics to a header", mapped, docs.length);
-}
-
-private void readSymbolics(string path, ref uint[string] codes, ref string[string] headers)
-{
-    JSONValue j = parseJSON(cast(const(char)[])readfile(path));
-
-    const(JSONValue) *jheaders = "headers" in j;
-    if (jheaders is null)
-        throw new Exception("No headers in '"~path~"'");
-
-    foreach (const(JSONValue) jheader; jheaders.array)
-    {
-        string name = jheader["name"].str;
-
-        const(JSONValue) *jsymbolics = "symbolics" in jheader;
-        if (jsymbolics is null)
-            continue;
-
-        foreach (const(JSONValue) jsym; jsymbolics.array)
-        {
-            string symbolic = jsym["name"].str;
-            if (symbolic in headers) // first definition wins, as the site does
-                continue;
-
-            uint code = void;
-            if (parseCode(jsym["id"].str, code) == false)
-                continue;
-
-            headers[symbolic] = name;
-            codes[symbolic] = code;
-        }
-    }
 }
 
 unittest
