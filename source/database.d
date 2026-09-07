@@ -139,6 +139,14 @@ void databaseLoadFromFolder(string base)
         databaseLoadWindowsModules(path);
     databaseSortWindowsModules();
 
+    // Documentation is extracted from a checkout of the Microsoft docs, which
+    // an instance may well not have, so its absence is not an error
+    string docspath = buildPath(dirWindows, "driver-docs.json");
+    if (exists(docspath))
+        databaseLoadWindowsDocs(docspath);
+    else
+        stderr.writeln("warning: no documentation found in '", dirWindows, "'");
+
     // Make up merged error stuff from Windows headers and modules.
     // 1. Make error entries out of every module error codes
     // 2. Update error entries with their symbolic name if available
@@ -604,6 +612,164 @@ SysTime databaseTimestamp()
 }
 
 //
+// Windows documentation
+//
+
+/// A parameter of a bug check, as its article documents it
+struct WindowsDocParameter
+{
+    string name;
+    string description; /// Rendered HTML
+}
+
+/// An article from the Windows driver documentation, attached to the symbolic
+/// name it documents
+struct WindowsDoc
+{
+    string kind;    /// "bugcheck" or "cmprob"
+    string key;     /// Lowercase symbolic name for searching
+    string name;    /// Symbolic name
+    uint id;        /// Code the article documents
+    string origId;  /// Code as the article writes it
+    string decId;   /// Code formatted as decimal
+    string title;
+    string description; /// Plain text summary
+    string url;     /// Article on learn.microsoft.com
+    string header;  /// Header defining the symbolic, null when none does
+    WindowsDocParameter[] parameters;
+    string html;    /// Article body, rendered
+}
+
+private void databaseLoadWindowsDocs(string path)
+{
+    const(char)[] source = readSource(path);
+    scope(exit) releaseSource(source);
+    JSONReader reader = JSONReader(source);
+
+    const(char)[] key = void;
+
+    reader.enterObject();
+    while (reader.readKey(key))
+    {
+        if (key != "docs")
+        {
+            reader.skipValue();
+            continue;
+        }
+
+        reader.enterArray();
+        while (reader.nextElement())
+            data_windows_docs ~= readDoc(reader);
+    }
+
+    sort!("a.key < b.key")(data_windows_docs);
+
+    statistics.windowsDocCount = data_windows_docs.length;
+}
+
+private WindowsDoc readDoc(ref JSONReader reader)
+{
+    WindowsDoc doc;
+    const(char)[] key = void;
+
+    reader.enterObject();
+    while (reader.readKey(key))
+    {
+        switch (key) {
+        case "kind":
+            doc.kind = arenaDup(reader.readString());
+            break;
+        case "name":
+            doc.name = arenaDup(reader.readString());
+            doc.key  = arenaLower(doc.name);
+            break;
+        case "code":
+            doc.origId = arenaDup(reader.readString());
+            break;
+        case "title":
+            doc.title = arenaDup(reader.readString());
+            break;
+        case "description":
+            doc.description = arenaDup(reader.readString());
+            break;
+        case "url":
+            doc.url = arenaDup(reader.readString());
+            break;
+        case "header":
+            doc.header = arenaDup(reader.readString());
+            break;
+        case "html":
+            doc.html = arenaDup(reader.readString());
+            break;
+        case "parameters":
+            reader.enterArray();
+            while (reader.nextElement())
+                doc.parameters ~= readDocParameter(reader);
+            break;
+        default:
+            reader.skipValue();
+        }
+    }
+
+    if (parseCode(doc.origId, doc.id) == false)
+        stderr.writeln("warning: parsing code '", doc.origId, "' failed");
+    doc.decId = arenaText(doc.id);
+
+    return doc;
+}
+
+private WindowsDocParameter readDocParameter(ref JSONReader reader)
+{
+    WindowsDocParameter param;
+    const(char)[] key = void;
+
+    reader.enterObject();
+    while (reader.readKey(key))
+    {
+        switch (key) {
+        case "name":        param.name        = arenaDup(reader.readString()); break;
+        case "description": param.description = arenaDup(reader.readString()); break;
+        default:            reader.skipValue();
+        }
+    }
+
+    return param;
+}
+
+// Get all articles, by symbolic name
+WindowsDoc[] databaseWindowsDocs()
+{
+    return data_windows_docs;
+}
+
+// Get article by the symbolic name it documents
+//
+// Searched rather than scanned: the bug code listing looks up every row it
+// writes, which a linear walk would turn into a quarter of a million compares.
+WindowsDoc databaseWindowsDocByName(const(char)[] name)
+{
+    char[256] keybuf = void;
+    const(char)[] key = toLowerBuf(keybuf, name);
+
+    size_t low;
+    size_t high = data_windows_docs.length;
+
+    while (low < high)
+    {
+        size_t mid = low + ((high - low) / 2);
+        if (data_windows_docs[mid].key < key)
+            low = mid + 1;
+        else if (data_windows_docs[mid].key > key)
+            high = mid;
+        else
+            return data_windows_docs[mid];
+    }
+
+    static immutable WindowsDoc empty;
+    return cast()empty;
+}
+
+//
 // CRT facilities
 //
 
@@ -707,6 +873,7 @@ struct DatabaseStatistics
     size_t windowsModuleCount;
     size_t windowsSymbolicCount; // symbolic names + code
     size_t windowsModuleErrorCount; // errors from module
+    size_t windowsDocCount; // documented bug checks and problem codes
     
     size_t totalMessageCount;
 }
@@ -942,6 +1109,7 @@ DatabaseCrt[] data_crt;
 WindowsHeader[] data_windows_headers;
 WindowsModule[] data_windows_modules;
 WindowsRelease[] data_windows_releases;
+WindowsDoc[] data_windows_docs;
 
 SysTime data_timestamp;
 

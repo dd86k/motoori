@@ -8,6 +8,7 @@ import std.string : toLower, stripRight;
 import utils : collectPeriodically;
 import motoori, database, sitemap, api;
 import extra.windows;
+import extra.bugcodes;
 
 import ddhttpd;
 
@@ -427,6 +428,119 @@ void putNtstatusDecoding(ref HTTPReply buffer, uint code)
     buffer.writef(`<li>Code: 0x%04x (%d)</li>`, layout.code, layout.code);
     buffer.put(`</ul>`);
 }
+//
+// Documentation articles
+//
+
+// Written into the symbolic page, under whatever the headers and modules had to
+// say about the same name. The body is put out verbatim: it was rendered by the
+// extractor, off a source tree, not off anything a request carries.
+void putWindowsDoc(ref HTTPReply buffer, ref WindowsDoc doc)
+{
+    if (doc.parameters.length)
+    {
+        buffer.put(`<h2>Parameters</h2>`);
+        buffer.put(`<table class="table">`);
+        buffer.put(`<thead><tr><th>Parameter</th><th>Description</th></tr></thead>`);
+        buffer.put(`<tbody>`);
+        foreach (ref WindowsDocParameter param; doc.parameters)
+            buffer.writef(`<tr><td>%s</td><td>%s</td></tr>`, param.name, param.description);
+        buffer.put(`</tbody></table>`);
+    }
+
+    // The article opens on prose with no heading of its own, and the sections
+    // under it are <h2> like everything else on the page, so it needs one
+    buffer.put(`<h2>Description</h2>`);
+    buffer.put(`<div class="doc">`);
+    buffer.put(doc.html);
+    buffer.put(`</div>`);
+
+    // The text is Microsoft's, and the licence asks for the credit
+    buffer.writef(
+        `<p class="doc-source">`~
+        `Article text from the <a href="%s" target="_blank" rel="noopener">Windows driver documentation`~
+        `<span class="visually-hidden"> (opens in a new tab)</span></a>, `~
+        `by Microsoft, under the `~
+        `<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0`~
+        `<span class="visually-hidden"> (opens in a new tab)</span></a> licence.`~
+        `</p>`,
+        doc.url
+    );
+}
+
+/// One row of the bug code listing
+struct BugCodeRow
+{
+    string name;
+    string key;
+    uint id;
+    const(char)[] abstract_; /// Article summary, or the header message
+    BugCodeCategory category;
+    bool livedump;
+}
+
+// Every symbolic bugcodes.h defines, plus the bug checks documented since the
+// header data was taken. Both halves are needed: the header has codes with no
+// article, the documentation has articles for codes the header never got.
+BugCodeRow[] bugCodeRows()
+{
+    WindowsHeader winheader = databaseWindowsHeader("bugcodes.h");
+
+    BugCodeRow[] rows;
+    rows.reserve(winheader.symbolics.length + 64);
+
+    foreach (ref WindowsSymbolic sym; winheader.symbolics)
+    {
+        WindowsDoc doc = databaseWindowsDocByName(sym.key);
+        rows ~= BugCodeRow(sym.name, sym.key, sym.id,
+            doc.description.length ? doc.description : sym.message,
+            bugcodeCategory(sym.name), bugcodeLiveDump(sym.name));
+    }
+
+    foreach (ref WindowsDoc doc; databaseWindowsDocs())
+    {
+        if (doc.kind != "bugcheck" || doc.header == "bugcodes.h")
+            continue;
+
+        rows ~= BugCodeRow(doc.name, doc.key, doc.id, doc.description,
+            bugcodeCategory(doc.name), bugcodeLiveDump(doc.name));
+    }
+
+    sort!("a.id < b.id")(rows);
+    return rows;
+}
+
+// A symbolic page for a name no header defines: every Device Manager problem
+// code, and the bug checks added since the header data was taken. The article
+// is all such an entry has, so it stands in for the header and message parts.
+void pageWindowsDocSymbol(ref HTTPReply buffer, ref WindowsDoc doc)
+{
+    buffer.writef(
+        `<p class="breadcrumb"><a href="/windows/">Windows</a> / %s</p>`~
+        `<h1>%s</h1>`,
+        doc.name, doc.name
+    );
+
+    // A problem code is an ordinal of the Device Manager rather than an error
+    // code, so it gets neither a code page nor the layout decoding
+    if (doc.kind == "cmprob")
+    {
+        buffer.writef(`<p>Device Manager problem code: %s</p>`, doc.decId);
+    }
+    else
+    {
+        char[32] codebuf = void;
+        char[32] urlbuf = void;
+        buffer.writef(`<p>Bug check code: <a href="/windows/code/%s">%s</a> (%s)</p>`,
+            sformatWindowsCodeURL(urlbuf, doc.id),
+            sformatWindowsCodeURL(codebuf, doc.id),
+            doc.decId);
+        putWindowsCodeDecoding(buffer, doc.id);
+    }
+
+    putWindowsDoc(buffer, doc);
+}
+
 const(char)[] crtDescription(char[] buffer, ref DatabaseCrt crt)
 {
     return sformat(buffer, "Error codes and messages from the %s C runtime (%s).", crt.full, crt.arch);
@@ -476,10 +590,15 @@ string searchExactURL(char[] buffer, string query)
 
     WindowsHeader winheader = void;
     WindowsSymbolic winsymbol = databaseWindowsSymbolicByName(query, winheader);
-    if (winsymbol.key == string.init)
-        return null;
+    if (winsymbol.key.length)
+        return cast(string)sformat(buffer, "/windows/error/%s", winsymbol.key);
 
-    return cast(string)sformat(buffer, "/windows/error/%s", winsymbol.key);
+    // Problem codes have no header defining them, only an article
+    WindowsDoc windoc = databaseWindowsDocByName(query);
+    if (windoc.key.length)
+        return cast(string)sformat(buffer, "/windows/error/%s", windoc.key);
+
+    return null;
 }
 
 //
@@ -688,6 +807,7 @@ int main(string[] args)
             buffer.writef(`<tr><td>Windows modules</td><td>%d</td></tr>`, dbstats.windowsModuleCount);
             buffer.writef(`<tr><td>Windows module messages</td><td>%d</td></tr>`, dbstats.windowsModuleErrorCount);
             buffer.writef(`<tr><td>C runtime messages</td><td>%d</td></tr>`, dbstats.crtMessageCount);
+            buffer.writef(`<tr><td>Documented codes</td><td>%d</td></tr>`, dbstats.windowsDocCount);
             buffer.put(`</tbody></table>`);
             
             // Module and message counts are per release, so they add up to more
@@ -726,6 +846,10 @@ int main(string[] args)
                     `Microsoft Error Lookup Tool version 6.4.5</a> for Windows header entries.</li>`~
                 `<li>Microsoft Windows x64 installs for Windows module entries, `~
                     `per release as listed <a href="#database">above</a>.</li>`~
+                `<li><a href="https://github.com/MicrosoftDocs/windows-driver-docs">`~
+                    `Windows driver documentation</a> for the bug check and Device Manager `~
+                    `problem code articles, under the `~
+                    `<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> licence.</li>`~
                 `<li>Microsoft Windows 11 x64 for `~ABBR_MSVC~` entries.</li>`~
                 `<li>Ubuntu 24.04 AMD64 for Glibc entries.</li>`~
                 `<li>Alpine 3.18 AMD64 for Musl entries.</li>`~
@@ -1120,6 +1244,7 @@ int main(string[] args)
             buffer.put(`<li><a href="/windows/error-types">Error code formats</a></li>`);
             buffer.put(`<li><a href="/windows/modules">List by module</a></li>`);
             buffer.put(`<li><a href="/windows/headers">List by header</a></li>`);
+            buffer.put(`<li><a href="/windows/bugcodes">Bug check codes, by subsystem</a></li>`);
             buffer.put(`</ul>`);
             buffer.put(
                 `<p>`~
@@ -1501,6 +1626,101 @@ int main(string[] args)
             collectPeriodically();
             return REQUEST_OK;
         })
+        .addRoute("GET", "/windows/bugcodes", (ref HTTPRequest req)
+        {
+            BugCodeRow[] rows = bugCodeRows();
+
+            size_t reserve = PAGE_MARKUP;
+            foreach (ref row; rows)
+                reserve += row.name.length + row.abstract_.length + ROW_MARKUP;
+
+            HTTPReply buffer = HTTPReply.create(reserve);
+
+            prepareHeader(buffer, req, "Bug Check Codes | OEDB",
+                "Every bug check (blue screen stop code) Windows defines, grouped by "~
+                "the part of the system it comes from.",
+                "/windows/bugcodes", ActiveTab.windows);
+
+            buffer.put(
+                `<p class="breadcrumb"><a href="/windows/">Windows</a> / Bug check codes</p>`~
+                `<h1>Bug Check Codes</h1>`~
+                `<p>`~
+                `A bug check is what the kernel raises when it cannot keep running safely: `~
+                `it stops the machine, writes a dump, and shows the code on the blue screen. `~
+                `The codes come from <a href="/windows/header/bugcodes.h">bugcodes.h</a>, `~
+                `which lists them in numeric order and says nothing about what part of the `~
+                `system each one belongs to. They are grouped here by hand, so that reading `~
+                `down one subsystem is possible at all.`~
+                `</p>`~
+                `<p>`~
+                `Codes tagged <span class="tag is-small">live dump</span> are the exception `~
+                `to the halt: the system captures a dump of itself and carries on running.`~
+                `</p>`
+            );
+
+            // Jump list, since the page is far taller than a screen
+            buffer.put(`<ul class="grouplist">`);
+            foreach (ref immutable(BugCodeGroup) group; bugcodeGroups)
+            {
+                size_t count;
+                foreach (ref row; rows)
+                    count += row.category == group.category;
+                if (count == 0)
+                    continue;
+
+                buffer.writef(`<li><a href="#%s">%s</a> (%d)</li>`,
+                    group.category, group.name, count);
+            }
+            buffer.put(`</ul>`);
+
+            size_t total;
+            foreach (ref immutable(BugCodeGroup) group; bugcodeGroups)
+            {
+                size_t count;
+                foreach (ref row; rows)
+                    count += row.category == group.category;
+                if (count == 0)
+                    continue;
+
+                buffer.writef(`<h2 id="%s">%s</h2>`, group.category, group.name);
+                buffer.writef(`<p>%s</p>`, group.description);
+                buffer.put(`<table class="table">`);
+                buffer.put(`<thead><tr><th>Code</th><th>Symbolic</th><th>Abstract</th></tr></thead>`);
+                buffer.put(`<tbody>`);
+                foreach (ref row; rows)
+                {
+                    if (row.category != group.category)
+                        continue;
+
+                    ++total;
+                    char[32] codebuf = void;
+                    char[32] urlbuf = void;
+                    buffer.writef(
+                        `<tr>`~
+                        `<td><a href="/windows/code/%s">%s</a></td>`~
+                        `<td><a href="/windows/error/%s">%s</a>`,
+                        sformatWindowsCodeURL(urlbuf, row.id),
+                        sformatWindowsCodeURL(codebuf, row.id),
+                        row.key, row.name
+                    );
+                    if (row.livedump)
+                        buffer.put(` <span class="tag is-small">live dump</span>`);
+                    buffer.writef(`</td><td>%s</td></tr>`, row.abstract_);
+                }
+                buffer.put(`</tbody>`);
+                buffer.writef(`<tfoot><tr><td colspan="3">%s %s</td></tr></tfoot>`,
+                    count, plural(count,"entry","entries"));
+                buffer.put(`</table>`);
+            }
+
+            buffer.writef(`<p>%s %s in total.</p>`, total, plural(total,"code","codes"));
+
+            prepareFooter(buffer);
+
+            req.reply(200, buffer, "text/html");
+            collectPeriodically();
+            return REQUEST_OK;
+        })
         .addRoute("GET", "/search", (ref HTTPRequest req)
         {
             import std.datetime.stopwatch : StopWatch;
@@ -1643,6 +1863,11 @@ int main(string[] args)
                 `<p class="breadcrumb"><a href="/windows/">Windows</a> / <a href="/windows/headers">Headers</a> / %s</p>`, winheader.key);
             buffer.writef(`<h1>%s</h1>`, winheader.name);
             buffer.writef(`<p>%s</p>`, winheader.description);
+            // The one header with a listing of its own, since its codes are
+            // documented at length and read better grouped than numbered
+            if (winheader.key == "bugcodes.h")
+                buffer.put(`<p><a href="/windows/bugcodes">Browse these by subsystem</a>, `~
+                    `with the documented ones summarised.</p>`);
             buffer.put(`<h2>Associated Error Codes</h2>`);
             buffer.put(`<p>Below is a list of error codes found for this header.</p>`);
             putTableFilter(buffer, "codes", "Filter error codes");
@@ -1806,7 +2031,7 @@ int main(string[] args)
             buffer.writef(`<p>Decimal: %u &middot; Signed: %d</p>`, code, cast(int)code);
             
             putWindowsCodeDecoding(buffer, code);
-            
+
             // Most codes match a handful of entries, but the low numeric ones
             // collide across nearly every subsystem, so only offer the filter there.
             bool filter_mods = results_modules.length >= FILTER_MIN_ROWS;
@@ -1883,14 +2108,36 @@ int main(string[] args)
 
             WindowsHeader winheader = void;
             WindowsSymbolic winsymbol = databaseWindowsSymbolicByName(symbolname, winheader);
+            WindowsDoc windoc = databaseWindowsDocByName(symbolname);
             if (winsymbol.name == string.init)
-                throw new HttpServerException(HTTPStatus.notFound, HTTPMsg.notFound, req);
-            
+            {
+                if (windoc.name == string.init)
+                    throw new HttpServerException(HTTPStatus.notFound, HTTPMsg.notFound, req);
+
+                HTTPReply docbuffer = HTTPReply.create(PAGE_MARKUP + windoc.html.length);
+
+                char[256] doctitlebuf = void;
+                char[256] doccanonbuf = void;
+                prepareHeader(docbuffer, req,
+                    cast(string)sformat(doctitlebuf, "%s | OEDB", windoc.name),
+                    windoc.description,
+                    cast(string)sformat(doccanonbuf, "/windows/error/%s", windoc.key),
+                    ActiveTab.windows);
+
+                pageWindowsDocSymbol(docbuffer, windoc);
+
+                prepareFooter(docbuffer);
+
+                req.reply(200, docbuffer, "text/html");
+                collectPeriodically();
+                return REQUEST_OK;
+            }
+
             // Associated modules
             SearchWindowsModuleResult[] modules = searchWindowsModulesByCode(winsymbol.id);
 
             size_t rowmarkup = ROW_MARKUP + releaseTagsMarkup();
-            size_t reserve = PAGE_MARKUP + winsymbol.message.length;
+            size_t reserve = PAGE_MARKUP + winsymbol.message.length + windoc.html.length;
             foreach (ref mod; modules)
                 reserve += mod.module_.name.length + mod.error.message.length + rowmarkup;
 
@@ -1935,7 +2182,10 @@ int main(string[] args)
                     winsymbol.message
                 );
             }
-            
+
+            if (windoc.name.length)
+                putWindowsDoc(buffer, windoc);
+
             if (modules.length)
             {
                 buffer.put(`<h2>Associated Modules</h2>`);

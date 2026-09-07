@@ -330,6 +330,34 @@ code {
 	border: 1px solid var(--border);
 }
 
+/* Jump list over the bug code groups: a column of one-word links wastes the
+   width it is given, so they run across instead. */
+.grouplist {
+	display: flex;
+	flex-wrap: wrap;
+	gap: .4em 1.6em;
+	list-style: none;
+	padding: 0;
+}
+.grouplist li {
+	margin: 0;
+}
+
+/* Documentation articles quote debugger output, where the column alignment is
+   the point, and wrap it in a <code> that would otherwise box every dump. */
+.doc pre {
+	white-space: pre;
+	overflow-x: auto;
+}
+.doc pre code {
+	background: none;
+	border: none;
+}
+.doc-source {
+	color: var(--muted);
+	font-size: .9em;
+}
+
 /* Tables */
 
 table {

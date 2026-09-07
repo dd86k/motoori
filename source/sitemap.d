@@ -1,11 +1,13 @@
 /// XML sitemap generation.
 ///
 /// Only hub pages are listed: the front page, the section and listing pages,
-/// and one entry per Windows header and module. The ~75,000 symbolic-name and
-/// code pages are left out on purpose. Every one of them is reachable within
-/// three clicks of the front page, so a sitemap buys no discovery there, and
-/// submitting them would bury the pages that do deserve indexing under far more
-/// URLs than a site this size will ever get crawled.
+/// one entry per Windows header and module, and one per symbolic name carrying
+/// a documentation article, those being the only ones with prose of their own.
+/// The other ~75,000 symbolic-name and code pages are left out on purpose.
+/// Every one of them is reachable within three clicks of the front page, so a
+/// sitemap buys no discovery there, and submitting them would bury the pages
+/// that do deserve indexing under far more URLs than a site this size will ever
+/// get crawled.
 ///
 /// That keeps the whole thing to one file, well under the 50,000 URL limit that
 /// would otherwise force a sitemap index.
@@ -29,6 +31,7 @@ static immutable string[] SITEMAP_PAGES = [
     "/windows/error-types",
     "/windows/modules",
     "/windows/headers",
+    "/windows/bugcodes",
     "/crt/",
     "/crt/msvc",
     "/crt/gnu",
@@ -58,6 +61,8 @@ void putSitemap(ref HTTPReply buffer, const(char)[] origin)
         putURL(buffer, origin, "/windows/header/", header.key);
     foreach (ref WindowsModule mod; databaseWindowsModules())
         putURL(buffer, origin, "/windows/module/", mod.name);
+    foreach (ref WindowsDoc doc; databaseWindowsDocs())
+        putURL(buffer, origin, "/windows/error/", doc.key);
 
     buffer.put(`</urlset>`);
 }
@@ -85,7 +90,8 @@ HTTPServer addSitemapRoutes(HTTPServer http)
     // comes from the request while --base-url is unset.
     size_t estimate = SITEMAP_PAGES.length
         + databaseWindowsHeaders().length
-        + databaseWindowsModules().length;
+        + databaseWindowsModules().length
+        + databaseWindowsDocs().length;
 
     return http.addRoute("GET", "/sitemap.xml", (ref HTTPRequest req)
     {
