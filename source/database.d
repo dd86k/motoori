@@ -1206,6 +1206,42 @@ size_t searchLimit()
     return SEARCH_LIMIT;
 }
 
+// Whether a query is shaped like a constant rather than message text.
+//
+// Names are only searched for these: "error" spelled as prose would otherwise
+// fill the result cap with ERROR_* symbols and bury every message that
+// mentions it.
+private bool looksSymbolic(const(char)[] query)
+{
+    import std.ascii : isWhite, isUpper, isLower;
+
+    bool upper, lower, underscore;
+    foreach (char c; query)
+    {
+        if (isWhite(c))
+            return false;
+        else if (c == '_')
+            underscore = true;
+        else if (isUpper(c))
+            upper = true;
+        else if (isLower(c))
+            lower = true;
+    }
+
+    return underscore || (upper && lower == false);
+}
+unittest
+{
+    assert(looksSymbolic("ERROR_FTP_DROPPED"));
+    assert(looksSymbolic("error_ftp"));
+    assert(looksSymbolic("HTBOTT"));
+    assert(looksSymbolic("MIDL2000"));
+    assert(looksSymbolic("access denied") == false);
+    assert(looksSymbolic("dropped") == false);
+    assert(looksSymbolic("Session") == false);
+    assert(looksSymbolic("") == false);
+}
+
 /// Search every message for a code or a piece of text.
 ///
 /// The result is only good until this thread searches again: the buffer behind
@@ -1234,6 +1270,8 @@ SearchResult[] search(string input)
             needle = toLower(input);
     }
 
+    bool isname = iscode == false && looksSymbolic(input);
+
     // Take reference code/message reference and compare it with
     // local code/input
     bool process(uint refcode, string reforigid, string refdesc,
@@ -1248,6 +1286,12 @@ SearchResult[] search(string input)
         if (iscode)
         {
             found = code == refcode;
+        }
+        else if (isname && reforigid.length && indexOfFold(reforigid, needle) >= 0)
+        {
+            // The result title is the name itself, so it needs no snippet
+            results ~= SearchResult(type, reforigid, name, os);
+            return results.length >= SEARCH_LIMIT;
         }
         else if (refdesc) // Typically descriptions of windows modules/headers
         {

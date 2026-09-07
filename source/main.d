@@ -678,6 +678,10 @@ string searchExactURL(char[] buffer, string query)
     if (windoc.key.length)
         return cast(string)sformat(buffer, "/windows/error/%s", windoc.key);
 
+    Win32Result[] win32 = databaseWin32ByName(query);
+    if (win32.length)
+        return cast(string)sformat(buffer, "/windows/error/%s", win32[0].entry.key);
+
     return null;
 }
 
