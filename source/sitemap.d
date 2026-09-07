@@ -33,6 +33,7 @@ static immutable string[] SITEMAP_PAGES = [
     "/windows/modules",
     "/windows/headers",
     "/windows/bugcodes",
+    "/windows/cmprob",
     "/windows/win32",
     "/crt/",
     "/crt/msvc",

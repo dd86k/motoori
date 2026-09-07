@@ -503,7 +503,7 @@ void putWin32Entries(ref HTTPReply buffer, Win32Result[] found)
         // Only worth printing where it adds something: the page already leads
         // with the code the header gives, and a few articles disagree with it.
         if (result.entry.origId.length)
-            buffer.writef(` &middot; %s`, result.entry.origId);
+            buffer.writef(`: %s`, result.entry.origId);
         buffer.put(`</p>`);
 
         if (result.entry.description.length)
@@ -661,7 +661,8 @@ void pageCrt(ref HTTPReply buffer, ref DatabaseCrt crt)
 ///
 /// A code query never matches message text anyway, and its page decodes the
 /// value even when nothing in the database carries it, so it always wins over
-/// a result list. Symbolic names are not searched at all, only listed here.
+/// a result list. A name that exists verbatim wins for the same reason: the
+/// search finds it too, but buried under everything it is a substring of.
 string searchExactURL(char[] buffer, string query)
 {
     uint code = void;
@@ -892,6 +893,8 @@ int main(string[] args)
             buffer.writef(`<tr><td>Windows module messages</td><td>%d</td></tr>`, dbstats.windowsModuleErrorCount);
             buffer.writef(`<tr><td>C runtime messages</td><td>%d</td></tr>`, dbstats.crtMessageCount);
             buffer.writef(`<tr><td>Documented codes</td><td>%d</td></tr>`, dbstats.windowsDocCount);
+            buffer.writef(`<tr><td>Win32 code listings</td><td>%d</td></tr>`, dbstats.win32DocCount);
+            buffer.writef(`<tr><td>Win32 documented constants</td><td>%d</td></tr>`, dbstats.win32EntryCount);
             buffer.put(`</tbody></table>`);
             
             // Module and message counts are per release, so they add up to more
@@ -988,10 +991,12 @@ int main(string[] args)
                 `<tr><td><a href="/api/v1/search?q=access+denied">/api/v1/search?q=</a></td>`~
                     `<td>Search over codes and message text, same as the site search</td></tr>`~
                 `<tr><td><a href="/api/v1/windows/code/0x80070005">/api/v1/windows/code/{code}</a></td>`~
-                    `<td>A code decoded as HRESULT and NTSTATUS, with every module and `~
-                    `header defining it. Takes hexadecimal, decimal, or signed decimal.</td></tr>`~
+                    `<td>A code decoded as HRESULT and NTSTATUS, with every module, `~
+                    `header, and article defining it. Takes hexadecimal, decimal, or `~
+                    `signed decimal.</td></tr>`~
                 `<tr><td><a href="/api/v1/windows/error/ERROR_ACCESS_DENIED">/api/v1/windows/error/{symbolic}</a></td>`~
-                    `<td>A symbolic name, its code, and the modules carrying it</td></tr>`~
+                    `<td>A symbolic name, its code, the modules carrying it, and the `~
+                    `documentation for it</td></tr>`~
                 `<tr><td><a href="/api/v1/windows/headers">/api/v1/windows/headers</a></td>`~
                     `<td>Every Windows header</td></tr>`~
                 `<tr><td><a href="/api/v1/windows/header/winerror.h">/api/v1/windows/header/{header}</a></td>`~
@@ -1021,7 +1026,12 @@ int main(string[] args)
                 `"hex": "0x80070005",`~"\n"~
                 `"signed": -2147024891,`~"\n"~
                 `"kind": "win32InHresult"`~
-                `</pre>`
+                `</pre>`~
+                `<p>`~
+                `All four are <code>null</code> on the handful of names carrying no `~
+                `value: the Device Manager problem codes, and the return values and `~
+                `hit test results the Win32 documentation lists without one.`~
+                `</p>`
             );
             buffer.put(FIELD_TABLE_HEAD);
             putFieldRow(buffer, "code", "number",
@@ -1166,26 +1176,60 @@ int main(string[] args)
                 `<code>symbolics</code> are counts of what the entry's own page returns.`);
             buffer.put(FIELD_TABLE_FOOT);
 
+            buffer.put(`<h2 id="documentation">Documentation</h2>`);
+            buffer.put(
+                `<p>`~
+                `A code or symbolic lookup carries what the Microsoft documentation `~
+                `says about the name, in two places: <code>documentation</code> for `~
+                `the driver articles (bug checks and Device Manager problem codes), `~
+                `and <code>win32</code> for the Win32 code listings. Both hold only `~
+                `what no header defines on a code lookup, the rest being an entry of `~
+                `<code>headers</code> already; on a symbolic lookup they hold `~
+                `everything documenting the name.`~
+                `</p>`
+            );
+            buffer.put(FIELD_TABLE_HEAD);
+            putFieldRow(buffer, "documentation", "object, array, or null",
+                `One article on a symbolic lookup, <code>null</code> when none `~
+                `documents the name; an array of them on a code lookup.`);
+            putFieldRow(buffer, "documentation.kind", "string",
+                `<code>bugcheck</code> for a stop code, <code>cmprob</code> for a `~
+                `Device Manager problem code, the latter being an ordinal rather `~
+                `than an error code.`);
+            putFieldRow(buffer, "documentation.value", "number",
+                `What the article documents: the bug check code, or the number the `~
+                `Device Manager shows.`);
+            putFieldRow(buffer, "win32", "array",
+                `One entry per listing documenting the name. A name can appear in `~
+                `several, and the listings do not always agree on its value.`);
+            putFieldRow(buffer, "listing", "string",
+                `Key of the Win32 listing, for <code>/windows/win32/</code>.`);
+            putFieldRow(buffer, "title", "string",
+                `Title of the article, as the documentation gives it.`);
+            putFieldRow(buffer, "url", "string or null",
+                `The article on learn.microsoft.com.`);
+            buffer.put(FIELD_TABLE_FOOT);
+
             buffer.put(`<h2 id="search">Search results</h2>`);
             buffer.writef(
                 `<p>`~
                 `<code>/api/v1/search</code> takes the same queries as the site: a code `~
                 `in any of the three forms, or text to look for in messages. It returns `~
-                `at most %u results, and no more than one page of them &mdash; there is `~
-                `no cursor.`~
+                `at most %u results.`~
                 `</p>`,
                 searchLimit());
             buffer.put(FIELD_TABLE_HEAD);
             putFieldRow(buffer, "query", "string", `The query, echoed back.`);
             putFieldRow(buffer, "type", "string",
-                `<code>windows-module</code>, <code>windows-symbol</code>, or `~
-                `<code>crt</code>, naming which of the three the entry came from.`);
+                `<code>windows-module</code>, <code>windows-symbol</code>, `~
+                `<code>windows-doc</code>, <code>windows-win32</code>, or `~
+                `<code>crt</code>, naming which source the entry came from.`);
             putFieldRow(buffer, "id", "string",
                 `How the entry spells its own identifier: a code for `~
                 `<code>windows-module</code> and <code>crt</code> results, a symbolic `~
-                `name for <code>windows-symbol</code> ones.`);
+                `name for the other three.`);
             putFieldRow(buffer, "source", "string",
-                `The module, header, or runtime the entry belongs to.`);
+                `The module, header, runtime, or article the entry belongs to.`);
             putFieldRow(buffer, "url", "string",
                 `Path of the page for this entry on the site, to hand back to a reader.`);
             putFieldRow(buffer, "excerpt", "string",
@@ -1216,8 +1260,8 @@ int main(string[] args)
             buffer.put(
                 `<p>`~
                 `A well-formed code is never a 404: the reply decodes it and returns `~
-                `empty <code>modules</code> and <code>headers</code> arrays, since the `~
-                `decoding holds whether or not anything on file uses the value.`~
+                `empty arrays, since the decoding holds whether or not anything on `~
+                `file uses the value.`~
                 `</p>`
             );
             
@@ -1329,6 +1373,7 @@ int main(string[] args)
             buffer.put(`<li><a href="/windows/modules">List by module</a></li>`);
             buffer.put(`<li><a href="/windows/headers">List by header</a></li>`);
             buffer.put(`<li><a href="/windows/bugcodes">Bug check codes, by subsystem</a></li>`);
+            buffer.put(`<li><a href="/windows/cmprob">Device Manager problem codes</a></li>`);
             buffer.put(`<li><a href="/windows/win32">Win32 code listings</a></li>`);
             buffer.put(`</ul>`);
             buffer.put(
@@ -1806,6 +1851,67 @@ int main(string[] args)
             collectPeriodically();
             return REQUEST_OK;
         })
+        .addRoute("GET", "/windows/cmprob", (ref HTTPRequest req)
+        {
+            // The Device Manager shows the number, so the number is what a
+            // reader scans down, not the name the article is filed under
+            WindowsDoc[] docs;
+            foreach (ref WindowsDoc doc; databaseWindowsDocs())
+            {
+                if (doc.kind == "cmprob")
+                    docs ~= doc;
+            }
+            sort!("a.id < b.id")(docs);
+
+            size_t reserve = PAGE_MARKUP;
+            foreach (ref WindowsDoc doc; docs)
+                reserve += doc.name.length + doc.description.length + ROW_MARKUP;
+
+            HTTPReply buffer = HTTPReply.create(reserve);
+
+            prepareHeader(buffer, req, "Device Manager Problem Codes | OEDB",
+                "Every CM_PROB problem code the Device Manager reports against a "~
+                "device, with what each one means.",
+                "/windows/cmprob", ActiveTab.windows);
+
+            buffer.put(
+                `<p class="breadcrumb"><a href="/windows/">Windows</a> / Problem codes</p>`~
+                `<h1>Device Manager Problem Codes</h1>`~
+                `<p>`~
+                `A problem code is what the Plug and Play manager records against a device `~
+                `it could not bring up, and what the Device Manager shows in its place. `~
+                `It is an ordinal rather than an error code: the value is only meaningful `~
+                `next to the device it was set on, so these get no code page.`~
+                `</p>`
+            );
+
+            putTableFilter(buffer, "cmprob", "Filter problem codes");
+            buffer.put(`<table class="table" id="cmprob">`);
+            buffer.put(`<thead><tr><th>Code</th><th>Symbolic</th><th>Abstract</th></tr></thead>`);
+            buffer.put(`<tbody>`);
+
+            size_t count;
+            foreach (ref WindowsDoc doc; docs)
+            {
+                ++count;
+                buffer.writef(
+                    `<tr><td>%s</td><td><a href="/windows/error/%s">%s</a></td><td>`,
+                    doc.decId, doc.key, doc.name);
+                putText(buffer, doc.description);
+                buffer.put(`</td></tr>`);
+            }
+
+            buffer.put(`</tbody>`);
+            buffer.writef(`<tfoot><tr><td colspan="3">%s %s</td></tr></tfoot>`,
+                count, plural(count,"entry","entries"));
+            buffer.put(`</table>`);
+
+            prepareFooter(buffer, true);
+
+            req.reply(200, buffer, "text/html");
+            collectPeriodically();
+            return REQUEST_OK;
+        })
         .addRoute("GET", "/windows/win32", (ref HTTPRequest req)
         {
             Win32Doc[] docs = databaseWin32Docs();
@@ -2021,6 +2127,11 @@ int main(string[] args)
                         url_title = cast(string)result.origId;
                         url_code = cast(string)sformat(urlcodebuf, "/windows/error/%s", result.origId);
                         break;
+                    case "windows-doc":
+                        title_type = "Windows documentation";
+                        url_title = cast(string)result.origId;
+                        url_code = cast(string)sformat(urlcodebuf, "/windows/error/%s", result.origId);
+                        break;
                     case "crt":
                         title_type = "C runtime";
                         url_title = cast(string)result.name;
@@ -2229,6 +2340,7 @@ int main(string[] args)
             SearchWindowsHeaderResult[] results_headers = searchWindowsHeadersByCode(code);
             SearchWindowsModuleResult[] results_modules = searchWindowsModulesByCode(code);
             Win32Result[] results_win32 = databaseWin32ByCode(code);
+            WindowsDoc[] results_docs = databaseWindowsDocsByCode(code);
             
             // "Proper" code as if MS would print it I guess
             char[32] formalbuf = void;
@@ -2244,6 +2356,8 @@ int main(string[] args)
             foreach (ref Win32Result result; results_win32)
                 reserve += result.doc.title.length + result.entry.name.length +
                     result.entry.description.length + ROW_MARKUP;
+            foreach (ref WindowsDoc doc; results_docs)
+                reserve += doc.name.length + doc.description.length + ROW_MARKUP;
 
             HTTPReply buffer = HTTPReply.create(reserve);
 
@@ -2251,14 +2365,21 @@ int main(string[] args)
             // things in every subsystem that returns it, so quoting the first
             // match would assert a meaning the page itself does not.
             char[256] descbuf = void;
-            const(char)[] description = results_modules.length || results_headers.length ?
-                sformat(descbuf,
+            const(char)[] description = void;
+            if (results_modules.length || results_headers.length)
+                description = sformat(descbuf,
                     "Windows error code %s (%u) decoded as HRESULT and NTSTATUS, "~
                     "with the %u %s and %u %s defining it.",
                     formal, code,
                     results_modules.length, plural(results_modules.length, "module", "modules"),
-                    results_headers.length, plural(results_headers.length, "header", "headers")) :
-                sformat(descbuf,
+                    results_headers.length, plural(results_headers.length, "header", "headers"));
+            else if (results_docs.length || results_win32.length)
+                description = sformat(descbuf,
+                    "Windows error code %s (%u) decoded as HRESULT and NTSTATUS, "~
+                    "with what the Microsoft documentation says about it.",
+                    formal, code);
+            else
+                description = sformat(descbuf,
                     "Windows error code %s (%u) decoded as HRESULT and NTSTATUS. "~
                     "No module or header in the database carries it.",
                     formal, code);
@@ -2334,6 +2455,28 @@ int main(string[] args)
             buffer.writef(`<tr><td colspan="3">%s %s</td></tr>`,
                 count_headers, plural(count_headers,"entry","entries"));
             buffer.put(`</tfoot></table>`);
+
+            // Bug checks documented since the header data was taken: the ones
+            // bugcodes.h has are already a row in the table above.
+            if (results_docs.length)
+            {
+                buffer.put(`<h2>Documented Bug Checks</h2>`);
+                buffer.put(`<table>`);
+                buffer.put(`<thead><tr><th>Symbolic</th><th>Abstract</th></tr></thead>`);
+                buffer.put(`<tbody>`);
+                foreach (ref WindowsDoc doc; results_docs)
+                {
+                    buffer.writef(
+                        `<tr><td id="%s"><a href="/windows/error/%s">%s</a></td><td>`,
+                        doc.name, doc.key, doc.name);
+                    putText(buffer, doc.description);
+                    buffer.put(`</td></tr>`);
+                }
+                buffer.put(`</tbody><tfoot>`);
+                buffer.writef(`<tr><td colspan="2">%s %s</td></tr>`,
+                    results_docs.length, plural(results_docs.length,"entry","entries"));
+                buffer.put(`</tfoot></table>`);
+            }
 
             // Only the names no header carries: anything else is already a row
             // in the table above, under the header that defines it.

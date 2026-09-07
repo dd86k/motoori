@@ -646,6 +646,13 @@ struct WindowsDoc
     string html;    /// Article body, rendered
 }
 
+// Where one bug check code is documented
+private struct DocRef
+{
+    uint id;
+    uint doc;
+}
+
 private void databaseLoadWindowsDocs(string path)
 {
     const(char)[] source = readSource(path);
@@ -669,6 +676,19 @@ private void databaseLoadWindowsDocs(string path)
     }
 
     sort!("a.key < b.key")(data_windows_docs);
+
+    // A code page finds a bug check under the header defining it; only the ones
+    // no header got need an entry of their own, and a problem code is an
+    // ordinal of the Device Manager rather than a code, so it gets none at all.
+    foreach (size_t i, ref WindowsDoc doc; data_windows_docs)
+    {
+        if (doc.header.length || doc.kind != "bugcheck")
+            continue;
+
+        data_windows_doc_codes ~= DocRef(doc.id, cast(uint)i);
+    }
+
+    sort!("a.id < b.id")(data_windows_doc_codes);
 
     statistics.windowsDocCount = data_windows_docs.length;
 }
@@ -773,6 +793,20 @@ WindowsDoc databaseWindowsDocByName(const(char)[] name)
 
     static immutable WindowsDoc empty;
     return cast()empty;
+}
+
+/// Bug checks carrying a code that no header defines. Reused buffer, see search().
+WindowsDoc[] databaseWindowsDocsByCode(uint code)
+{
+    static WindowsDoc[] results;
+    results.length = 0;
+    results.assumeSafeAppend();
+
+    size_t at = lowerBound!("a.id < b")(data_windows_doc_codes, code);
+    for (; at < data_windows_doc_codes.length && data_windows_doc_codes[at].id == code; ++at)
+        results ~= data_windows_docs[data_windows_doc_codes[at].doc];
+
+    return results;
 }
 
 //
@@ -1278,6 +1312,9 @@ SearchResult[] search(string input)
         string type,    // winmodule, winsymbol, crt)
         string name,    // Name of module, header, or crt
         WindowsOSSet os = 0,
+        // Off for a name another source is authoritative for: the entry is
+        // still worth searching for its prose, which is only written here.
+        bool matchname = true,
     )
     {
         bool found;
@@ -1287,7 +1324,7 @@ SearchResult[] search(string input)
         {
             found = code == refcode;
         }
-        else if (isname && reforigid.length && indexOfFold(reforigid, needle) >= 0)
+        else if (isname && matchname && reforigid.length && indexOfFold(reforigid, needle) >= 0)
         {
             // The result title is the name itself, so it needs no snippet
             results ~= SearchResult(type, reforigid, name, os);
@@ -1347,16 +1384,31 @@ SearchResult[] search(string input)
             return results;
     }
     
-    // Only the names no header defines: the rest were already offered above,
-    // under the header that is authoritative for them.
+    // The articles carry summaries no header has, so they are searched whole;
+    // only a name a header already defines is left out, having been offered
+    // above under the header that is authoritative for it.
+    foreach (ref WindowsDoc windoc; data_windows_docs)
+    {
+        // A problem code is an ordinal of the Device Manager, so it answers to
+        // no code query
+        if (iscode && (windoc.header.length || windoc.kind != "bugcheck"))
+            continue;
+
+        with (windoc)
+        if (process(id, name, description, "windows-doc", title, 0, header.length == 0))
+            return results;
+    }
+
+    // Same rule: a defined name belongs to its header, but the listing's own
+    // description of it exists nowhere else.
     foreach (ref win32doc; data_win32_docs)
     foreach (ref entry; win32doc.entries)
     {
-        if (entry.defined || (iscode && entry.origId.length == 0))
+        if (iscode && (entry.defined || entry.origId.length == 0))
             continue;
 
         with (entry)
-        if (process(id, name, description, "windows-win32", win32doc.title))
+        if (process(id, name, description, "windows-win32", win32doc.title, 0, defined == false))
             return results;
     }
 
@@ -1435,6 +1487,7 @@ WindowsHeader[] data_windows_headers;
 WindowsModule[] data_windows_modules;
 WindowsRelease[] data_windows_releases;
 WindowsDoc[] data_windows_docs;
+DocRef[] data_windows_doc_codes; // by code, bug checks no header defines
 Win32Doc[] data_win32_docs;
 Win32Ref[] data_win32_index; // by name
 Win32Ref[] data_win32_codes; // by code, names no header defines

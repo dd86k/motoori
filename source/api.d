@@ -172,6 +172,64 @@ void putHeaderMatches(ref HTTPReply buffer, SearchWindowsHeaderResult[] results)
     buffer.put(']');
 }
 
+// An article of the driver documentation. The body is left out: it runs to
+// tens of kilobytes of HTML, which the site is the place for.
+void putDoc(ref HTTPReply buffer, ref WindowsDoc doc)
+{
+    buffer.put('{');
+    putField(buffer, "kind", doc.kind);
+    buffer.put(',');
+    putField(buffer, "symbolic", doc.name);
+    buffer.put(',');
+    putField(buffer, "title", doc.title);
+    buffer.writef(`,"value":%u,`, doc.id);
+    putFieldOrNull(buffer, "description", doc.description);
+    buffer.put(',');
+    putFieldOrNull(buffer, "header", doc.header);
+    buffer.put(',');
+    putFieldOrNull(buffer, "url", doc.url);
+    buffer.put('}');
+}
+
+void putDocMatches(ref HTTPReply buffer, WindowsDoc[] docs)
+{
+    buffer.put('[');
+    foreach (size_t i, ref WindowsDoc doc; docs)
+    {
+        if (i) buffer.put(',');
+        putDoc(buffer, doc);
+    }
+    buffer.put(']');
+}
+
+void putWin32Matches(ref HTTPReply buffer, Win32Result[] results)
+{
+    buffer.put('[');
+    foreach (size_t i, ref Win32Result result; results)
+    {
+        if (i) buffer.put(',');
+        buffer.put('{');
+        putField(buffer, "listing", result.doc.key);
+        buffer.put(',');
+        putField(buffer, "title", result.doc.title);
+        buffer.put(',');
+        putFieldOrNull(buffer, "header", result.doc.header);
+        buffer.put(',');
+        putField(buffer, "symbolic", result.entry.name);
+        buffer.put(',');
+        // A return value or hit test result is documented without one
+        if (result.entry.origId.length)
+            buffer.writef(`"code":%u,`, result.entry.id);
+        else
+            buffer.put(`"code":null,`);
+        putFieldOrNull(buffer, "description", result.entry.description);
+        buffer.put(',');
+        putFieldOrNull(buffer, "url", result.doc.url);
+        buffer.put('}');
+    }
+    buffer.put(']');
+}
+
 int reply(ref HTTPRequest req, ref HTTPReply buffer)
 {
     req.addHeader("Cache-Control", API_CACHE_CONTROL);
@@ -222,9 +280,11 @@ int apiStats(ref HTTPRequest req)
     putFieldOrNull(buffer, "updated", databaseUpdated());
     buffer.writef(
         `,"messages":%u,"windowsHeaders":%u,"windowsSymbolics":%u,`~
-        `"windowsModules":%u,"windowsModuleMessages":%u,"crtMessages":%u}`,
+        `"windowsModules":%u,"windowsModuleMessages":%u,"windowsDocs":%u,`~
+        `"win32Listings":%u,"win32Constants":%u,"crtMessages":%u}`,
         stats.totalMessageCount, stats.windowsHeaderCount, stats.windowsSymbolicCount,
-        stats.windowsModuleCount, stats.windowsModuleErrorCount, stats.crtMessageCount);
+        stats.windowsModuleCount, stats.windowsModuleErrorCount, stats.windowsDocCount,
+        stats.win32DocCount, stats.win32EntryCount, stats.crtMessageCount);
     return reply(req, buffer);
 }
 
@@ -249,6 +309,10 @@ int apiWindowsCode(ref HTTPRequest req)
 
     SearchWindowsHeaderResult[] headers = searchWindowsHeadersByCode(code);
     SearchWindowsModuleResult[] modules = searchWindowsModulesByCode(code);
+    // Both lists hold only what no header defines, as on the code page: the
+    // rest is already an entry of "headers", under the header to trust for it.
+    WindowsDoc[] docs = databaseWindowsDocsByCode(code);
+    Win32Result[] win32 = databaseWin32ByCode(code);
 
     HTTPReply buffer = HTTPReply.create(16 * 1024);
     buffer.put('{');
@@ -259,6 +323,10 @@ int apiWindowsCode(ref HTTPRequest req)
     putModuleMatches(buffer, modules);
     buffer.put(`,"headers":`);
     putHeaderMatches(buffer, headers);
+    buffer.put(`,"documentation":`);
+    putDocMatches(buffer, docs);
+    buffer.put(`,"win32":`);
+    putWin32Matches(buffer, win32);
     buffer.put('}');
 
     return reply(req, buffer);
@@ -270,28 +338,89 @@ int apiWindowsError(ref HTTPRequest req)
     if (qsymbol.length == 0)
         throw new HttpServerException(HTTPStatus.badRequest, HTTPMsg.badRequest, req);
 
+    // The three places a name can live, same as the symbolic page: a header
+    // dump, an article of the driver documentation, or a Win32 code listing.
     WindowsHeader winheader = void;
     WindowsSymbolic winsymbol = databaseWindowsSymbolicByName(qsymbol, winheader);
-    if (winsymbol.name == string.init)
+    WindowsDoc windoc = databaseWindowsDocByName(qsymbol);
+    Win32Result[] win32 = databaseWin32ByName(qsymbol);
+
+    if (winsymbol.name == string.init && windoc.name == string.init && win32.length == 0)
         throw new HttpServerException(HTTPStatus.notFound, HTTPMsg.notFound, req);
 
-    SearchWindowsModuleResult[] modules = searchWindowsModulesByCode(winsymbol.id);
+    string name = winsymbol.name;
+    string description = winsymbol.message;
+    uint code = winsymbol.id;
+    // A problem code is an ordinal of the Device Manager, not an error code,
+    // and a name the documentation lists without a value has none either
+    bool hascode = winsymbol.name != string.init;
 
-    HTTPReply buffer = HTTPReply.create(8 * 1024);
+    if (windoc.name.length)
+    {
+        if (name.length == 0)
+            name = windoc.name;
+        if (description.length == 0)
+            description = windoc.description;
+        if (hascode == false && windoc.kind == "bugcheck")
+        {
+            code = windoc.id;
+            hascode = true;
+        }
+    }
+
+    foreach (ref Win32Result result; win32)
+    {
+        if (name.length == 0)
+            name = result.entry.name;
+        if (description.length == 0)
+            description = result.entry.description;
+        if (hascode == false && result.entry.origId.length)
+        {
+            code = result.entry.id;
+            hascode = true;
+        }
+    }
+
+    SearchWindowsModuleResult[] modules = hascode ?
+        searchWindowsModulesByCode(code) : null;
+
+    size_t reserve = 8 * 1024;
+    foreach (ref Win32Result result; win32)
+        reserve += result.entry.description.length + ENTRY_OVERHEAD;
+
+    HTTPReply buffer = HTTPReply.create(reserve);
     buffer.put('{');
-    putField(buffer, "symbolic", winsymbol.name);
+    putField(buffer, "symbolic", name);
     buffer.put(',');
-    putCodeIdentity(buffer, winsymbol.id);
+    if (hascode)
+        putCodeIdentity(buffer, code);
+    else
+        buffer.put(`"code":null,"hex":null,"signed":null,"kind":null`);
     buffer.put(',');
-    putFieldOrNull(buffer, "description", winsymbol.message);
-    buffer.put(`,"header":{`);
-    putField(buffer, "key", winheader.key);
-    buffer.put(',');
-    putField(buffer, "name", winheader.name);
-    buffer.put(`},`);
-    putDecoding(buffer, winsymbol.id);
+    putFieldOrNull(buffer, "description", description);
+    if (winsymbol.name != string.init)
+    {
+        buffer.put(`,"header":{`);
+        putField(buffer, "key", winheader.key);
+        buffer.put(',');
+        putField(buffer, "name", winheader.name);
+        buffer.put(`}`);
+    }
+    else buffer.put(`,"header":null`);
+    if (hascode)
+    {
+        buffer.put(',');
+        putDecoding(buffer, code);
+    }
     buffer.put(`,"modules":`);
     putModuleMatches(buffer, modules);
+    buffer.put(`,"documentation":`);
+    if (windoc.name.length)
+        putDoc(buffer, windoc);
+    else
+        buffer.put("null");
+    buffer.put(`,"win32":`);
+    putWin32Matches(buffer, win32);
     buffer.put('}');
 
     return reply(req, buffer);
@@ -512,7 +641,7 @@ void putResultURL(ref HTTPReply buffer, ref SearchResult result)
     case "windows-module":
         url = sformat(urlbuf, "/windows/code/%s", result.origId);
         break;
-    case "windows-symbol", "windows-win32":
+    case "windows-symbol", "windows-win32", "windows-doc":
         url = sformat(urlbuf, "/windows/error/%s", result.origId);
         break;
     case "crt":
