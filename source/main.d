@@ -289,6 +289,22 @@ void putStatCard(ref HTTPReply buffer, size_t count, string label, string link =
         buffer.writef(`<span class="stat-label">%s</span>`, label);
     buffer.put(`</div>`);
 }
+struct SectionLink
+{
+    string url;
+    string label;
+}
+// Front page card introducing one section of the site and its pages
+void putSectionCard(ref HTTPReply buffer, string title, string url,
+    const(char)[] description, SectionLink[] links)
+{
+    buffer.writef(`<div class="col card section"><h2><a href="%s">%s</a></h2>`, url, title);
+    buffer.writef(`<p>%s</p>`, description);
+    buffer.put(`<ul>`);
+    foreach (ref SectionLink link; links)
+        buffer.writef(`<li><a href="%s">%s</a></li>`, link.url, link.label);
+    buffer.put(`</ul></div>`);
+}
 // Field reference tables on the API page
 enum FIELD_TABLE_HEAD = `<table class="table">`~
     `<thead><tr><th>Field</th><th>Type</th><th>Values</th></tr></thead><tbody>`;
@@ -839,14 +855,59 @@ int main(string[] args)
                 `such as Microsoft&reg; Windows&reg; `~
                 `and C runtimes at the same, convenient place.`~
                 `</p>`~
+                // Autofocused: looking a code up is the only thing this page is for.
+                `<form action="/search" role="search" class="herosearch">`~
+                `<label class="visually-hidden" for="hero-search-input">Search error codes</label>`~
+                `<input name="q" id="hero-search-input" autofocus`~
+                ` placeholder="Code, symbolic name, or message" />`~
+                `<button type="submit" class="button icon-only i i-search" aria-label="Search"></button>`~
+                `</form>`~
+                // Each example takes a different route through searchExactURL, so
+                // the row doubles as the explanation of what the field accepts.
+                `<p class="examples">Try `~
+                `<a href="/search?q=0x80070005">0x80070005</a>, `~
+                `<a href="/search?q=ERROR_ACCESS_DENIED">ERROR_ACCESS_DENIED</a>, `~
+                `<a href="/search?q=INACCESSIBLE_BOOT_DEVICE">INACCESSIBLE_BOOT_DEVICE</a>, `~
+                `or <a href="/search?q=device+is+not+ready">device is not ready</a>.`~
+                `</p>`~
                 `</div>`
             );
 
             buffer.put(`<div class="row stats">`); // class="row"
-            putStatCard(buffer, dbstats.windowsHeaderCount, "Windows headers", "/windows/headers");
+            putStatCard(buffer, dbstats.totalMessageCount, "Error messages", "/about#database");
+            putStatCard(buffer, dbstats.windowsSymbolicCount, "Symbolic names", "/windows/headers");
             putStatCard(buffer, dbstats.windowsModuleCount, "Windows modules", "/windows/modules");
-            putStatCard(buffer, dbstats.totalMessageCount, "Error messages");
-            putStatCard(buffer, dbstats.windowsSymbolicCount, "Symbolic names");
+            putStatCard(buffer, dbstats.win32EntryCount, "Win32 constants", "/windows/win32");
+            buffer.put(`</div>`); // class="row"
+
+            // The section pages otherwise only list their own subpages, which
+            // leaves the bug check, problem code and Win32 listings two clicks
+            // deep and unnamed until you get there.
+            buffer.put(`<div class="row sections">`); // class="row"
+            putSectionCard(buffer, "Windows", "/windows/",
+                `Win32, `~ABBR_COM~`, kernel status codes, headers and modules.`,
+                [
+                    SectionLink("/windows/error-types", "Code formats"),
+                    SectionLink("/windows/headers",     "Headers"),
+                    SectionLink("/windows/modules",     "Modules"),
+                    SectionLink("/windows/bugcodes",    "Bug checks"),
+                    SectionLink("/windows/cmprob",      "Device Manager codes"),
+                    SectionLink("/windows/win32",       "Win32 listings"),
+                ]);
+            putSectionCard(buffer, "C Runtimes", "/crt/",
+                `The <code>errno</code> values and their messages.`,
+                [
+                    SectionLink("/crt/msvc", "MSVC"),
+                    SectionLink("/crt/gnu",  "Glibc"),
+                    SectionLink("/crt/musl", "Musl"),
+                ]);
+            putSectionCard(buffer, "API", "/api",
+                `Every entry here is also served as `~ABBR_JSON~`, without a key or a `~
+                `rate limit.`,
+                [
+                    SectionLink("/api", "Reference"),
+                    SectionLink("/api/v1/windows/code/0x80070005", "Example response"),
+                ]);
             buffer.put(`</div>`); // class="row"
 
             prepareFooter(buffer);

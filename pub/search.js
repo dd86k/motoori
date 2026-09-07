@@ -1,7 +1,9 @@
 "use strict";
 
-// "/" focuses the nav search box, unless the key is meant for a field being typed in.
-var searchInput = document.getElementById('search-input');
+// "/" focuses the search box, unless the key is meant for a field being typed in.
+// The home page's own box wins over the nav one when both are on the page.
+var navInput = document.getElementById('search-input');
+var searchInput = document.getElementById('hero-search-input') || navInput;
 
 function searchTypingInto(element) {
 	if (!element)
@@ -12,9 +14,10 @@ function searchTypingInto(element) {
 	return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 }
 
-if (searchInput) {
-	searchInput.placeholder = 'Search (/)'; // only true with js available
+if (navInput)
+	navInput.placeholder = 'Search (/)'; // only true with js available
 
+if (searchInput) {
 	document.addEventListener('keydown', function (event) {
 		if (event.key !== '/' || event.ctrlKey || event.altKey || event.metaKey)
 			return;

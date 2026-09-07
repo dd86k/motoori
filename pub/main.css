@@ -450,7 +450,7 @@ html.highcontrast .table-filter::placeholder {
 
 .hero {
 	text-align: center;
-	margin: 8rem auto 6rem;
+	margin: 6rem auto 5rem;
 	max-width: 70rem;
 }
 .title {
@@ -461,6 +461,51 @@ html.highcontrast .table-filter::placeholder {
 .tagline {
 	color: var(--muted);
 	margin: 0 auto;
+}
+
+/* Same pill as the nav search, sized to be the thing the page is about */
+.herosearch {
+	display: flex;
+	align-items: center;
+	max-width: 52rem;
+	margin: 3rem auto 1.5rem;
+	padding: .4rem .6rem .4rem 2rem;
+	border: 1px solid var(--border-strong);
+	border-radius: 999px;
+	background-color: var(--bg-color);
+	transition: border-color .15s ease, box-shadow .15s ease;
+}
+.herosearch:focus-within {
+	border-color: var(--accent);
+	box-shadow: 0 0 0 3px var(--accent-weak);
+}
+/* !important throughout: Chota's input rule carries seven :not()s */
+#hero-search-input {
+	flex: 1;
+	min-width: 0;
+	padding: .8rem 0 !important;
+	font-size: 1.8rem !important;
+	border: 0 !important;
+	background-color: transparent;
+	color: var(--font-color);
+	box-shadow: none !important;
+}
+.herosearch button[type=submit] {
+	margin: 0;
+	color: var(--muted);
+	background-color: transparent;
+}
+.herosearch button[type=submit]:hover {
+	color: var(--accent);
+	opacity: 1;
+}
+.examples {
+	color: var(--muted);
+	font-size: 1.4rem;
+}
+.examples a {
+	font-family: monospace;
+	white-space: nowrap;
 }
 
 .stats {
@@ -483,6 +528,28 @@ html.highcontrast .table-filter::placeholder {
 a.stat-label:hover {
 	color: var(--accent);
 	opacity: 1;
+}
+
+.sections {
+	margin-bottom: 6rem;
+}
+.section h2 {
+	font-size: 2rem;
+	margin: 0 0 1rem;
+}
+.section p {
+	color: var(--muted);
+	margin-bottom: 1.5rem;
+}
+/* The link list is the point of the card, so it reads as rows, not as prose */
+.section ul {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+.section li {
+	padding: .6rem 0;
+	border-top: 1px solid var(--border);
 }
 
 /* Search results */
@@ -673,6 +740,11 @@ thead, tfoot {
 		margin: 4rem auto;
 	}
 	.title { font-size: 3.2rem; }
+	.herosearch {
+		margin-top: 2.5rem;
+		padding-left: 1.4rem;
+	}
+	#hero-search-input { font-size: 1.6rem !important; }
 	h1 { font-size: 2.8rem; }
 	h2 { font-size: 2.2rem; }
 	table th, table td {
