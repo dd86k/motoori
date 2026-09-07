@@ -2,6 +2,7 @@ module extract.main;
 
 import std.stdio, std.file, std.getopt;
 import extract.source.crt : processCrtMessages;
+import extract.source.driverdocs : processDriverDocs;
 import extract.source.windows;
 import core.stdc.stdlib : exit;
 import extract.platform;
@@ -92,9 +93,13 @@ void main(string[] args)
         GEN_CRT = 1,
         GEN_WIN_HDR = 16,
         GEN_WIN_MOD = 32,
+        GEN_WIN_DOCS = 64,
         GEN_ARCHIVE = 256,
+        // Documentation is left out: it needs a checkout to point at, which
+        // only the option taking that path can supply.
         GEN_ALL = GEN_CRT | GEN_WIN_HDR | GEN_WIN_MOD | GEN_ARCHIVE,
     }
+    string odocsroot;
     string olocatemui;
     bool olistmuis;
     string ocode;
@@ -121,6 +126,11 @@ void main(string[] args)
         "generate-windows-modules", "Generate Windows module entries from active platform",
         () {
             ogenflags |= GEN_WIN_MOD;
+        },
+        "generate-windows-docs", "Generate documentation entries from a windows-driver-docs checkout",
+        (string _, string v) {
+            odocsroot = v;
+            ogenflags |= GEN_WIN_DOCS;
         },
         "generate-all", "Generate all info possible",
         () {
@@ -195,6 +205,9 @@ void main(string[] args)
 
         if (ogenflags & GEN_WIN_MOD)
             processWindowsModules(ooutdir, oall, oroot, os);
+
+        if (ogenflags & GEN_WIN_DOCS)
+            processDriverDocs(ooutdir, odocsroot);
     }
     catch (Exception ex)
     {

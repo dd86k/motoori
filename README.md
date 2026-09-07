@@ -34,6 +34,8 @@ Requirements:
   - Ubuntu is a well supported choice.
 - A Linux distro with the Musl environment for the `crt` extractor.
   - Alpine Linux is a well supported choice.
+- A checkout of [windows-driver-docs](https://github.com/MicrosoftDocs/windows-driver-docs)
+  for the bug check and Device Manager problem code articles.
 
 Suggestions:
 - VirtualBox with a shared folders setup.
@@ -45,6 +47,10 @@ Steps:
 4. Windows: Run the MS error tool: `Err_6.4.5.exe /:outputtoCSV headers.csv`
 5. To build the symbolic entries, run `extract --generate-windows-headers=headers.csv`
 6. To build the modules entries, run `extract --generate-windows-modules`
+7. To build the documentation entries, clone the docs and run
+   `extract --generate-windows-docs=windows-driver-docs`
+   - Run this after step 5: the symbolic names come out of `headers.json`,
+     which the extractor reports mismatches against.
 
 Should have most things. Do note that different versions of Windows will have
 different module versions.
